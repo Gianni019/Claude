@@ -11,7 +11,7 @@ import sqlite3
 from datetime import datetime
 
 class RechnungsDialog:
-    """Dialog zum Erstellen einer Rechnung"""
+    
     def __init__(self, parent, title, rechnung_id=None, conn=None, auftrag_id=None):
         self.parent = parent
         self.rechnung_id = rechnung_id
@@ -21,7 +21,7 @@ class RechnungsDialog:
         
         self.dialog = tk.Toplevel(parent)
         self.dialog.title(title)
-        self.dialog.geometry("600x500")
+        self.dialog.geometry("800x700")  # Größeres Dialogfenster
         self.dialog.transient(parent)
         self.dialog.grab_set()
         
@@ -35,12 +35,22 @@ class RechnungsDialog:
             auftrag_frame = ttk.LabelFrame(main_frame, text="Auftrag auswählen")
             auftrag_frame.pack(fill="x", expand=False, pady=5)
             
+            # Suchfeld für Aufträge
+            search_frame = ttk.Frame(auftrag_frame)
+            search_frame.pack(fill="x", expand=False, padx=5, pady=5)
+            
+            ttk.Label(search_frame, text="Suche:").pack(side="left", padx=5)
+            self.search_var = tk.StringVar()
+            search_entry = ttk.Entry(search_frame, textvariable=self.search_var, width=30)
+            search_entry.pack(side="left", padx=5)
+            search_entry.bind("<KeyRelease>", self.search_auftraege)
+            
             # Tabelle mit offenen Aufträgen
             table_frame = ttk.Frame(auftrag_frame)
             table_frame.pack(fill="both", expand=True, padx=5, pady=5)
             
             columns = ('id', 'kunde', 'beschreibung', 'status', 'datum')
-            self.auftraege_tree = ttk.Treeview(table_frame, columns=columns, show='headings', height=6)
+            self.auftraege_tree = ttk.Treeview(table_frame, columns=columns, show='headings', height=10)  # Höhere Tabelle
             
             self.auftraege_tree.heading('id', text='ID')
             self.auftraege_tree.heading('kunde', text='Kunde')
@@ -50,9 +60,9 @@ class RechnungsDialog:
             
             self.auftraege_tree.column('id', width=50, anchor='center')
             self.auftraege_tree.column('kunde', width=150)
-            self.auftraege_tree.column('beschreibung', width=200)
-            self.auftraege_tree.column('status', width=100)
-            self.auftraege_tree.column('datum', width=80)
+            self.auftraege_tree.column('beschreibung', width=300)
+            self.auftraege_tree.column('status', width=120)
+            self.auftraege_tree.column('datum', width=100)
             
             vsb = ttk.Scrollbar(table_frame, orient="vertical", command=self.auftraege_tree.yview)
             self.auftraege_tree.configure(yscrollcommand=vsb.set)
@@ -64,7 +74,7 @@ class RechnungsDialog:
             self.load_auftraege()
             
             # Auftrag auswählen-Button
-            ttk.Button(auftrag_frame, text="Auftrag auswählen", command=self.select_auftrag).pack(side="right", padx=5, pady=5)
+            ttk.Button(auftrag_frame, text="Auftrag auswählen", command=self.select_auftrag).pack(side="right", padx=10, pady=10)
             
             # Rest des Dialogs wird erst angezeigt, wenn ein Auftrag ausgewählt wurde
             self.rechnungsdaten_frame = None
@@ -76,48 +86,25 @@ class RechnungsDialog:
             self.create_rechnung_view(main_frame)
             
         self.dialog.wait_window()
+
+    def search_auftraege(self, event=None):
+        """Sucht in der Auftragsliste nach dem eingegebenen Text"""
+        search_term = self.search_var.get().lower()
         
-    def load_auftraege(self):
-        """Lädt abgeschlossene Aufträge ohne Rechnung"""
-        cursor = self.conn.cursor()
-        cursor.execute("""
-        SELECT a.id, k.vorname || ' ' || k.nachname as kunde, a.beschreibung, a.status,
-               strftime('%d.%m.%Y', a.erstellt_am) as datum
-        FROM auftraege a
-        JOIN kunden k ON a.kunden_id = k.id
-        LEFT JOIN rechnungen r ON a.id = r.auftrag_id
-        WHERE r.id IS NULL
-        ORDER BY a.erstellt_am DESC
-        """)
-        
-        # Tabelle leeren
         for item in self.auftraege_tree.get_children():
-            self.auftraege_tree.delete(item)
-            
-        # Daten einfügen
-        for row in cursor.fetchall():
-            self.auftraege_tree.insert('', 'end', values=row)
-            
-    def select_auftrag(self):
-        """Wählt einen Auftrag aus und zeigt die Rechnungsdaten an"""
-        selected_items = self.auftraege_tree.selection()
-        if not selected_items:
-            messagebox.showinfo("Information", "Bitte wählen Sie einen Auftrag aus.")
-            return
-            
-        # Auftrag auswählen
-        self.auftrag_id = self.auftraege_tree.item(selected_items[0])['values'][0]
-        
-        # Auftragsauswahl ausblenden
-        for widget in self.dialog.winfo_children():
-            widget.destroy()
-            
-        # Hauptframe neu erstellen
-        main_frame = ttk.Frame(self.dialog, padding=10)
-        main_frame.pack(fill="both", expand=True)
-        
-        # Rechnungsdaten anzeigen
-        self.create_rechnung_view(main_frame)
+            values = self.auftraege_tree.item(item)['values']
+            # Suche in ID, Kunde, Beschreibung und Status
+            if (search_term in str(values[0]).lower() or   # ID
+                search_term in str(values[1]).lower() or   # Kunde
+                search_term in str(values[2]).lower() or   # Beschreibung
+                search_term in str(values[3]).lower()):    # Status
+                self.auftraege_tree.item(item, tags=('match',))
+            else:
+                self.auftraege_tree.item(item, tags=('',))
+                
+        if search_term:
+            # Hervorheben der Treffer
+            self.auftraege_tree.tag_configure('match', background='lightyellow')
         
     def create_rechnung_view(self, parent_frame=None):
         """Erstellt die Ansicht für die Rechnungsdaten"""
@@ -142,8 +129,8 @@ class RechnungsDialog:
             auftrag = cursor.fetchone()
             if auftrag:
                 auftrag_info = ttk.Label(self.rechnungsdaten_frame, 
-                                       text=f"Auftrag: #{auftrag[0]} - {auftrag[2]} (Kunde: {auftrag[1]})",
-                                       font=("Arial", 10, "bold"))
+                                    text=f"Auftrag: #{auftrag[0]} - {auftrag[2]} (Kunde: {auftrag[1]})",
+                                    font=("Arial", 10, "bold"))
                 auftrag_info.grid(row=0, column=0, columnspan=4, sticky="w", padx=5, pady=5)
         
         ttk.Label(self.rechnungsdaten_frame, text="Rechnungsnummer:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
@@ -161,13 +148,13 @@ class RechnungsDialog:
         self.zahlungsziel_var = tk.StringVar(value="30")
         ttk.Spinbox(self.rechnungsdaten_frame, from_=0, to=90, textvariable=self.zahlungsziel_var, width=5).grid(row=2, column=1, sticky="w", padx=5, pady=5)
         
-        # Rabatt hinzufügen
-        ttk.Label(self.rechnungsdaten_frame, text="Rabatt (%):").grid(row=2, column=2, sticky="w", padx=5, pady=5)
+        # Rabatt für gesamte Rechnung
+        ttk.Label(self.rechnungsdaten_frame, text="Gesamtrabatt (%):").grid(row=2, column=2, sticky="w", padx=5, pady=5)
         self.rabatt_var = tk.StringVar(value="0")
         ttk.Spinbox(self.rechnungsdaten_frame, from_=0, to=100, textvariable=self.rabatt_var, width=5).grid(row=2, column=3, sticky="w", padx=5, pady=5)
         
         ttk.Label(self.rechnungsdaten_frame, text="Notizen:").grid(row=3, column=0, sticky="nw", padx=5, pady=5)
-        self.notizen_text = tk.Text(self.rechnungsdaten_frame, height=3, width=50)
+        self.notizen_text = tk.Text(self.rechnungsdaten_frame, height=3, width=60)
         self.notizen_text.grid(row=3, column=1, columnspan=3, sticky="w", padx=5, pady=5)
         
         # Standardtext einfügen
@@ -181,20 +168,23 @@ class RechnungsDialog:
         table_frame = ttk.Frame(positionen_frame)
         table_frame.pack(fill="both", expand=True, padx=5, pady=5)
         
-        columns = ('pos', 'bezeichnung', 'menge', 'einzelpreis', 'gesamtpreis')
+        # Tabellenspalten erweitern für Rabatt
+        columns = ('pos', 'bezeichnung', 'menge', 'einzelpreis', 'rabatt', 'gesamtpreis')
         self.positionen_tree = ttk.Treeview(table_frame, columns=columns, show='headings', height=10)
         
         self.positionen_tree.heading('pos', text='#')
         self.positionen_tree.heading('bezeichnung', text='Bezeichnung')
         self.positionen_tree.heading('menge', text='Menge')
         self.positionen_tree.heading('einzelpreis', text='Einzelpreis')
+        self.positionen_tree.heading('rabatt', text='Rabatt (%)')  # Neue Spalte für Rabatt
         self.positionen_tree.heading('gesamtpreis', text='Gesamtpreis')
         
         self.positionen_tree.column('pos', width=30, anchor='center')
         self.positionen_tree.column('bezeichnung', width=300)
-        self.positionen_tree.column('menge', width=50, anchor='center')
-        self.positionen_tree.column('einzelpreis', width=80, anchor='e')
-        self.positionen_tree.column('gesamtpreis', width=80, anchor='e')
+        self.positionen_tree.column('menge', width=60, anchor='center')
+        self.positionen_tree.column('einzelpreis', width=100, anchor='e')
+        self.positionen_tree.column('rabatt', width=80, anchor='center')  # Spaltenbreite für Rabatt
+        self.positionen_tree.column('gesamtpreis', width=100, anchor='e')
         
         vsb = ttk.Scrollbar(table_frame, orient="vertical", command=self.positionen_tree.yview)
         self.positionen_tree.configure(yscrollcommand=vsb.set)
@@ -209,14 +199,34 @@ class RechnungsDialog:
         ttk.Button(btn_frame, text="Position hinzufügen", command=self.add_position).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="Position bearbeiten", command=self.edit_position).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="Position entfernen", command=self.remove_position).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="Rabatt bearbeiten", command=self.edit_rabatt).pack(side="left", padx=5)  # Neuer Button für Rabatt
         
         # Zusammenfassung
-        summary_frame = ttk.Frame(parent_frame)
+        summary_frame = ttk.LabelFrame(parent_frame, text="Zusammenfassung")
         summary_frame.pack(fill="x", expand=False, pady=5)
         
-        ttk.Label(summary_frame, text="Gesamtbetrag:").pack(side="left", padx=5)
+        # Spalte für Summenberechnung
+        sum_col1 = ttk.Frame(summary_frame)
+        sum_col1.pack(side="left", fill="x", expand=True, padx=20, pady=5)
+        
+        ttk.Label(sum_col1, text="Zwischensumme:").grid(row=0, column=0, sticky="w", pady=2)
+        self.zwischensumme_var = tk.StringVar(value="0.00 CHF")
+        ttk.Label(sum_col1, textvariable=self.zwischensumme_var).grid(row=0, column=1, sticky="e", pady=2)
+        
+        ttk.Label(sum_col1, text="Rabatt:").grid(row=1, column=0, sticky="w", pady=2)
+        self.rabatt_betrag_var = tk.StringVar(value="0.00 CHF")
+        ttk.Label(sum_col1, textvariable=self.rabatt_betrag_var).grid(row=1, column=1, sticky="e", pady=2)
+        
+        ttk.Label(sum_col1, text="MwSt (7.7%):").grid(row=2, column=0, sticky="w", pady=2)
+        self.mwst_var = tk.StringVar(value="0.00 CHF")
+        ttk.Label(sum_col1, textvariable=self.mwst_var).grid(row=2, column=1, sticky="e", pady=2)
+        
+        ttk.Label(sum_col1, text="Gesamtbetrag:").grid(row=3, column=0, sticky="w", pady=2)
         self.gesamtbetrag_var = tk.StringVar(value="0.00 CHF")
-        ttk.Label(summary_frame, textvariable=self.gesamtbetrag_var, font=("Arial", 11, "bold")).pack(side="left", padx=5)
+        ttk.Label(sum_col1, textvariable=self.gesamtbetrag_var, font=("Arial", 11, "bold")).grid(row=3, column=1, sticky="e", pady=2)
+        
+        # Rabatt und MwSt ändern bei Änderung
+        self.rabatt_var.trace_add("write", self.update_summen)
         
         # Buttons
         btn_frame = ttk.Frame(parent_frame)
@@ -228,16 +238,180 @@ class RechnungsDialog:
         
         # Positionen automatisch aus Auftrag laden
         self.load_auftrag_positionen()
-    def generate_rechnung_nummer(self):
-        """Generiert eine neue Rechnungsnummer"""
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM rechnungen")
-        count = cursor.fetchone()[0] + 1
+
+    def add_position(self):
+        """Fügt eine manuelle Position zur Rechnung hinzu"""
+        position_dialog = PositionDialog(self.dialog, "Position hinzufügen")
         
-        # Format: RE-JAHR-NUMMER (z.B. RE-2023-0001)
-        rechnungsnr = f"RE-{datetime.now().year}-{count:04d}"
-        self.rechnungsnr_var.set(rechnungsnr)
+        if position_dialog.result:
+            bezeichnung, menge, einzelpreis, rabatt = position_dialog.result
+            
+            # Positionsnummer bestimmen
+            pos = len(self.positionen_tree.get_children()) + 1
+            
+            # Gesamtpreis berechnen (mit Rabatt)
+            gesamtpreis = menge * einzelpreis
+            rabatt_betrag = gesamtpreis * (rabatt / 100)
+            gesamtpreis_nach_rabatt = gesamtpreis - rabatt_betrag
+            
+            # Position einfügen
+            self.positionen_tree.insert('', 'end', values=(
+                pos, bezeichnung, menge, f"{einzelpreis:.2f} CHF", f"{rabatt:.2f}%", f"{gesamtpreis_nach_rabatt:.2f} CHF"
+            ))
+            
+            # Gesamtbeträge aktualisieren
+            self.update_summen()
+            
+    def edit_position(self):
+        """Bearbeitet eine Position"""
+        selected_items = self.positionen_tree.selection()
+        if not selected_items:
+            messagebox.showinfo("Information", "Bitte wählen Sie eine Position aus.")
+            return
+            
+        # Aktuelle Werte auslesen
+        values = self.positionen_tree.item(selected_items[0])['values']
+        bezeichnung = values[1]
+        menge_str = str(values[2])
         
+        # Einheiten entfernen, wenn vorhanden
+        if " h" in menge_str:
+            menge_str = menge_str.replace(" h", "")
+            
+        menge = float(menge_str)
+        
+        einzelpreis_str = str(values[3])
+        if " CHF/h" in einzelpreis_str:
+            einzelpreis_str = einzelpreis_str.replace(" CHF/h", "")
+        elif " CHF" in einzelpreis_str:
+            einzelpreis_str = einzelpreis_str.replace(" CHF", "")
+            
+        einzelpreis = float(einzelpreis_str.replace(',', '.'))
+        
+        # Rabatt auslesen
+        rabatt_str = str(values[4])
+        if "%" in rabatt_str:
+            rabatt_str = rabatt_str.replace("%", "")
+        rabatt = float(rabatt_str.replace(',', '.'))
+        
+        # Dialog zur Bearbeitung
+        position_dialog = PositionDialog(self.dialog, "Position bearbeiten", 
+                                    bezeichnung, menge, einzelpreis, rabatt)
+        
+        if position_dialog.result:
+            neue_bezeichnung, neue_menge, neuer_einzelpreis, neuer_rabatt = position_dialog.result
+            
+            # Gesamtpreis berechnen (mit Rabatt)
+            gesamtpreis = neue_menge * neuer_einzelpreis
+            rabatt_betrag = gesamtpreis * (neuer_rabatt / 100)
+            gesamtpreis_nach_rabatt = gesamtpreis - rabatt_betrag
+            
+            # Position aktualisieren
+            self.positionen_tree.item(selected_items[0], values=(
+                values[0], neue_bezeichnung, neue_menge, f"{neuer_einzelpreis:.2f} CHF", 
+                f"{neuer_rabatt:.2f}%", f"{gesamtpreis_nach_rabatt:.2f} CHF"
+            ))
+            
+            # Gesamtbeträge aktualisieren
+            self.update_summen()
+
+    def edit_rabatt(self):
+        """Bearbeitet den Rabatt einer bestimmten Position"""
+        selected_items = self.positionen_tree.selection()
+        if not selected_items:
+            messagebox.showinfo("Information", "Bitte wählen Sie eine Position aus.")
+            return
+            
+        # Aktuelle Werte auslesen
+        values = self.positionen_tree.item(selected_items[0])['values']
+        
+        # Aktuellen Rabatt auslesen
+        rabatt_str = str(values[4])
+        if "%" in rabatt_str:
+            rabatt_str = rabatt_str.replace("%", "")
+        aktueller_rabatt = float(rabatt_str.replace(',', '.'))
+        
+        # Dialog zur Eingabe des neuen Rabatts
+        neuer_rabatt = simpledialog.askfloat(
+            "Rabatt bearbeiten",
+            "Neuer Rabatt (%):",
+            parent=self.dialog,
+            initialvalue=aktueller_rabatt,
+            minvalue=0.0,
+            maxvalue=100.0
+        )
+        
+        if neuer_rabatt is not None:
+            # Menge und Einzelpreis auslesen
+            menge_str = str(values[2])
+            if " h" in menge_str:
+                menge_str = menge_str.replace(" h", "")
+            menge = float(menge_str)
+            
+            einzelpreis_str = str(values[3])
+            if " CHF/h" in einzelpreis_str:
+                einzelpreis_str = einzelpreis_str.replace(" CHF/h", "")
+            elif " CHF" in einzelpreis_str:
+                einzelpreis_str = einzelpreis_str.replace(" CHF", "")
+            einzelpreis = float(einzelpreis_str.replace(',', '.'))
+            
+            # Gesamtpreis neu berechnen
+            gesamtpreis = menge * einzelpreis
+            rabatt_betrag = gesamtpreis * (neuer_rabatt / 100)
+            gesamtpreis_nach_rabatt = gesamtpreis - rabatt_betrag
+            
+            # Position aktualisieren
+            self.positionen_tree.item(selected_items[0], values=(
+                values[0], values[1], values[2], values[3], f"{neuer_rabatt:.2f}%", f"{gesamtpreis_nach_rabatt:.2f} CHF"
+            ))
+            
+            # Gesamtbeträge aktualisieren
+            self.update_summen()
+
+    def update_summen(self, *args):
+        """Aktualisiert die Summen in der Zusammenfassung"""
+        zwischensumme = 0
+        
+        # Alle Positionen durchlaufen und deren Gesamtpreis addieren
+        for item in self.positionen_tree.get_children():
+            gesamtpreis_str = self.positionen_tree.item(item)['values'][5]
+            
+            # CHF-Zeichen entfernen
+            if " CHF" in gesamtpreis_str:
+                gesamtpreis_str = gesamtpreis_str.replace(" CHF", "")
+                
+            zwischensumme += float(gesamtpreis_str.replace(',', '.'))
+            
+        # Gesamtrabatt berechnen
+        try:
+            rabatt_prozent = float(self.rabatt_var.get().replace(',', '.'))
+        except ValueError:
+            rabatt_prozent = 0
+            
+        rabatt_betrag = zwischensumme * (rabatt_prozent / 100)
+        netto = zwischensumme - rabatt_betrag
+        
+        # MwSt berechnen
+        mwst_satz = 7.7  # Standard-MwSt-Satz für Schweiz
+        try:
+            from utils.config import get_company_info
+            company_info = get_company_info(self.conn)
+            if 'mwst' in company_info:
+                mwst_satz = float(company_info['mwst'])
+        except (ImportError, AttributeError, KeyError, ValueError):
+            pass
+            
+        mwst = netto * (mwst_satz / 100)
+        
+        # Gesamtbetrag
+        gesamtbetrag = netto + mwst
+        
+        # Werte aktualisieren
+        self.zwischensumme_var.set(f"{zwischensumme:.2f} CHF")
+        self.rabatt_betrag_var.set(f"{rabatt_betrag:.2f} CHF")
+        self.mwst_var.set(f"{mwst:.2f} CHF")
+        self.gesamtbetrag_var.set(f"{gesamtbetrag:.2f} CHF")
+
     def load_auftrag_positionen(self):
         """Lädt die Positionen aus dem ausgewählten Auftrag"""
         if not self.auftrag_id:
@@ -263,11 +437,21 @@ class RechnungsDialog:
         
         # Ersatzteile hinzufügen
         for row in cursor.fetchall():
+            bezeichnung = row[0]
+            menge = row[1]
             einzelpreis = row[2]
             gesamtpreis = row[3]
-            summe += gesamtpreis
+            rabatt = 0.0  # Standardwert für Rabatt
             
-            self.positionen_tree.insert('', 'end', values=(pos, row[0], row[1], f"{einzelpreis:.2f} CHF", f"{gesamtpreis:.2f} CHF"))
+            # Gesamtpreis mit Rabatt berechnen
+            rabatt_betrag = gesamtpreis * (rabatt / 100)
+            gesamtpreis_nach_rabatt = gesamtpreis - rabatt_betrag
+            
+            summe += gesamtpreis_nach_rabatt
+            
+            self.positionen_tree.insert('', 'end', values=(
+                pos, bezeichnung, menge, f"{einzelpreis:.2f} CHF", f"{rabatt:.2f}%", f"{gesamtpreis_nach_rabatt:.2f} CHF"
+            ))
             pos += 1
             
         # Arbeitszeit hinzufügen
@@ -281,18 +465,25 @@ class RechnungsDialog:
             
             arbeitszeit = auftrag[1]
             arbeitskosten = arbeitszeit * stundensatz
-            summe += arbeitskosten
+            rabatt = 0.0  # Standardwert für Rabatt
+            
+            # Gesamtpreis mit Rabatt berechnen
+            rabatt_betrag = arbeitskosten * (rabatt / 100)
+            arbeitskosten_nach_rabatt = arbeitskosten - rabatt_betrag
+            
+            summe += arbeitskosten_nach_rabatt
             
             self.positionen_tree.insert('', 'end', values=(
                 pos, 
                 f"Arbeitszeit: {auftrag[0]}", 
                 f"{arbeitszeit:.2f} h", 
                 f"{stundensatz:.2f} CHF/h", 
-                f"{arbeitskosten:.2f} CHF"
+                f"{rabatt:.2f}%",
+                f"{arbeitskosten_nach_rabatt:.2f} CHF"
             ))
             
-        # Gesamtbetrag aktualisieren
-        self.gesamtbetrag_var.set(f"{summe:.2f} CHF")
+        # Summen aktualisieren
+        self.update_summen()
     
     def add_position(self):
         """Fügt eine manuelle Position zur Rechnung hinzu"""
@@ -589,13 +780,13 @@ class RechnungsDialog:
 
 class PositionDialog:
     """Dialog zum Hinzufügen oder Bearbeiten einer Rechnungsposition"""
-    def __init__(self, parent, title, bezeichnung=None, menge=None, einzelpreis=None):
+    def __init__(self, parent, title, bezeichnung=None, menge=None, einzelpreis=None, rabatt=None):
         self.parent = parent
         self.result = None
         
         self.dialog = tk.Toplevel(parent)
         self.dialog.title(title)
-        self.dialog.geometry("400x200")
+        self.dialog.geometry("500x250")  # Größeres Dialogfenster
         self.dialog.transient(parent)
         self.dialog.grab_set()
         
@@ -606,7 +797,7 @@ class PositionDialog:
         # Eingabefelder
         ttk.Label(main_frame, text="Bezeichnung:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.bezeichnung_var = tk.StringVar(value=bezeichnung or "")
-        ttk.Entry(main_frame, textvariable=self.bezeichnung_var, width=40).grid(row=0, column=1, columnspan=3, sticky="w", padx=5, pady=5)
+        ttk.Entry(main_frame, textvariable=self.bezeichnung_var, width=50).grid(row=0, column=1, columnspan=3, sticky="w", padx=5, pady=5)
         
         ttk.Label(main_frame, text="Menge:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
         self.menge_var = tk.StringVar(value=str(menge) if menge is not None else "1")
@@ -616,14 +807,71 @@ class PositionDialog:
         self.einzelpreis_var = tk.StringVar(value=f"{einzelpreis:.2f}" if einzelpreis is not None else "0.00")
         ttk.Entry(main_frame, textvariable=self.einzelpreis_var, width=10).grid(row=1, column=3, sticky="w", padx=5, pady=5)
         
+        # Rabatt hinzufügen
+        ttk.Label(main_frame, text="Rabatt (%):").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+        self.rabatt_var = tk.StringVar(value=f"{rabatt:.2f}" if rabatt is not None else "0.00")
+        ttk.Spinbox(main_frame, from_=0, to=100, increment=0.5, textvariable=self.rabatt_var, width=10).grid(row=2, column=1, sticky="w", padx=5, pady=5)
+        
+        # Gesamtpreis (Vorschau)
+        ttk.Label(main_frame, text="Gesamtpreis (CHF):").grid(row=2, column=2, sticky="w", padx=5, pady=5)
+        self.gesamtpreis_var = tk.StringVar(value="0.00")
+        ttk.Label(main_frame, textvariable=self.gesamtpreis_var, font=("Arial", 10, "bold")).grid(row=2, column=3, sticky="w", padx=5, pady=5)
+        
+        # Gesamtpreis-Vorschau aktualisieren bei Änderungen
+        self.menge_var.trace_add("write", self.update_preview)
+        self.einzelpreis_var.trace_add("write", self.update_preview)
+        self.rabatt_var.trace_add("write", self.update_preview)
+        self.update_preview()
+        
         # Buttons
         btn_frame = ttk.Frame(main_frame)
-        btn_frame.grid(row=2, column=0, columnspan=4, sticky="e", pady=10)
+        btn_frame.grid(row=3, column=0, columnspan=4, sticky="e", pady=20)
         
         ttk.Button(btn_frame, text="Speichern", command=self.save_data).pack(side="right", padx=5)
         ttk.Button(btn_frame, text="Abbrechen", command=self.dialog.destroy).pack(side="right", padx=5)
         
         self.dialog.wait_window()
+    
+    def update_preview(self, *args):
+        """Aktualisiert die Gesamtpreis-Vorschau"""
+        try:
+            menge = float(self.menge_var.get().replace(',', '.'))
+            einzelpreis = float(self.einzelpreis_var.get().replace(',', '.'))
+            rabatt_prozent = float(self.rabatt_var.get().replace(',', '.'))
+            
+            # Gesamtpreis berechnen (mit Rabatt)
+            gesamtpreis = menge * einzelpreis
+            rabatt_betrag = gesamtpreis * (rabatt_prozent / 100)
+            gesamtpreis_nach_rabatt = gesamtpreis - rabatt_betrag
+            
+            self.gesamtpreis_var.set(f"{gesamtpreis_nach_rabatt:.2f}")
+        except ValueError:
+            self.gesamtpreis_var.set("Ungültige Eingabe")
+        
+    def save_data(self):
+        """Speichert die Positionsdaten"""
+        # Pflichtfelder prüfen
+        if not self.bezeichnung_var.get():
+            messagebox.showerror("Fehler", "Bitte geben Sie eine Bezeichnung ein.")
+            return
+            
+        try:
+            menge = float(self.menge_var.get().replace(',', '.'))
+            einzelpreis = float(self.einzelpreis_var.get().replace(',', '.'))
+            rabatt = float(self.rabatt_var.get().replace(',', '.'))
+            
+            if menge <= 0 or einzelpreis < 0:
+                messagebox.showerror("Fehler", "Menge muss größer als 0 und Preis darf nicht negativ sein.")
+                return
+            
+            if rabatt < 0 or rabatt > 100:
+                messagebox.showerror("Fehler", "Rabatt muss zwischen 0 und 100 Prozent liegen.")
+                return
+            
+            self.result = (self.bezeichnung_var.get(), menge, einzelpreis, rabatt)
+            self.dialog.destroy()
+        except ValueError:
+            messagebox.showerror("Fehler", "Bitte geben Sie gültige Werte für Menge, Preis und Rabatt ein.")
         
     def save_data(self):
         """Speichert die Positionsdaten"""

@@ -10,7 +10,6 @@ from tkinter import ttk, messagebox
 import sqlite3
 
 class ErsatzteilDialog:
-    """Dialog zum Erstellen und Bearbeiten von Ersatzteilen"""
     def __init__(self, parent, title, ersatzteil_id=None, conn=None):
         self.parent = parent
         self.ersatzteil_id = ersatzteil_id
@@ -19,7 +18,7 @@ class ErsatzteilDialog:
         
         self.dialog = tk.Toplevel(parent)
         self.dialog.title(title)
-        self.dialog.geometry("600x450")
+        self.dialog.geometry("700x500")  # Größeres Dialogfenster
         self.dialog.transient(parent)
         self.dialog.grab_set()
         
@@ -46,18 +45,18 @@ class ErsatzteilDialog:
         
         ttk.Label(details_frame, text="Lagerort:").grid(row=1, column=2, sticky="w", padx=5, pady=5)
         self.lagerort_var = tk.StringVar()
-        ttk.Entry(details_frame, textvariable=self.lagerort_var, width=20).grid(row=1, column=3, sticky="w", padx=5, pady=5)
+        ttk.Entry(details_frame, textvariable=self.lagerort_var, width=25).grid(row=1, column=3, sticky="w", padx=5, pady=5)
         
         # Einheit hinzufügen
         ttk.Label(details_frame, text="Einheit:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
         self.einheit_var = tk.StringVar(value="Stk.")
         self.einheit_combo = ttk.Combobox(details_frame, textvariable=self.einheit_var, width=10, 
-                                         values=["Stk.", "Liter", "h", "kg", "m", "Paar", "Set"])
+                                        values=["Stk.", "Liter", "h", "kg", "m", "Paar", "Set"])
         self.einheit_combo.grid(row=2, column=1, sticky="w", padx=5, pady=5)
         
         # Lagerdaten
         lager_frame = ttk.LabelFrame(main_frame, text="Lagerbestand")
-        lager_frame.pack(fill="x", expand=False, pady=5)
+        lager_frame.pack(fill="x", expand=False, pady=10)
         
         ttk.Label(lager_frame, text="Aktueller Bestand:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.bestand_var = tk.StringVar(value="0")
@@ -67,32 +66,32 @@ class ErsatzteilDialog:
         self.mindestbestand_var = tk.StringVar(value="1")
         ttk.Spinbox(lager_frame, from_=0, to=9999, textvariable=self.mindestbestand_var, width=10).grid(row=0, column=3, sticky="w", padx=5, pady=5)
         
-        # Preisdaten
+        # Preisdaten mit größeren Abständen
         preis_frame = ttk.LabelFrame(main_frame, text="Preisdaten")
-        preis_frame.pack(fill="x", expand=False, pady=5)
+        preis_frame.pack(fill="x", expand=False, pady=10)
         
-        ttk.Label(preis_frame, text="Einkaufspreis (CHF):").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        ttk.Label(preis_frame, text="Einkaufspreis (CHF):").grid(row=0, column=0, sticky="w", padx=5, pady=8)
         self.einkaufspreis_var = tk.StringVar(value="0.00")
-        ttk.Entry(preis_frame, textvariable=self.einkaufspreis_var, width=10).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        ttk.Entry(preis_frame, textvariable=self.einkaufspreis_var, width=10).grid(row=0, column=1, sticky="w", padx=5, pady=8)
         
-        ttk.Label(preis_frame, text="Verkaufspreis (CHF):").grid(row=0, column=2, sticky="w", padx=5, pady=5)
+        ttk.Label(preis_frame, text="Verkaufspreis (CHF):").grid(row=0, column=2, sticky="w", padx=5, pady=8)
         self.verkaufspreis_var = tk.StringVar(value="0.00")
-        ttk.Entry(preis_frame, textvariable=self.verkaufspreis_var, width=10).grid(row=0, column=3, sticky="w", padx=5, pady=5)
+        ttk.Entry(preis_frame, textvariable=self.verkaufspreis_var, width=10).grid(row=0, column=3, sticky="w", padx=5, pady=8)
         
         # Lieferanten
         lieferant_frame = ttk.LabelFrame(main_frame, text="Lieferantendaten")
-        lieferant_frame.pack(fill="x", expand=False, pady=5)
+        lieferant_frame.pack(fill="x", expand=False, pady=10)
         
-        ttk.Label(lieferant_frame, text="Lieferant:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        ttk.Label(lieferant_frame, text="Lieferant:").grid(row=0, column=0, sticky="w", padx=5, pady=8)
         self.lieferant_var = tk.StringVar()
-        ttk.Entry(lieferant_frame, textvariable=self.lieferant_var, width=30).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        ttk.Entry(lieferant_frame, textvariable=self.lieferant_var, width=40).grid(row=0, column=1, sticky="w", padx=5, pady=8)
         
         # Buttons
         btn_frame = ttk.Frame(main_frame)
-        btn_frame.pack(fill="x", expand=False, pady=10)
+        btn_frame.pack(fill="x", expand=False, pady=15)
         
-        ttk.Button(btn_frame, text="Speichern", command=self.save_data).pack(side="right", padx=5)
-        ttk.Button(btn_frame, text="Abbrechen", command=self.dialog.destroy).pack(side="right", padx=5)
+        ttk.Button(btn_frame, text="Speichern", command=self.save_data).pack(side="right", padx=10)
+        ttk.Button(btn_frame, text="Abbrechen", command=self.dialog.destroy).pack(side="right", padx=10)
         
         # Kategorien laden
         self.load_categories()

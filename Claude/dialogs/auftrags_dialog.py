@@ -24,7 +24,7 @@ class AuftragsDialog:
         
         self.dialog = tk.Toplevel(parent)
         self.dialog.title(title)
-        self.dialog.geometry("600x500")
+        self.dialog.geometry("800x700")  # Größere Dialogfenster
         self.dialog.transient(parent)
         self.dialog.grab_set()
         
@@ -56,7 +56,7 @@ class AuftragsDialog:
         
         ttk.Label(auftrag_frame, text="Beschreibung:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.beschreibung_var = tk.StringVar()
-        ttk.Entry(auftrag_frame, textvariable=self.beschreibung_var, width=50).grid(row=0, column=1, columnspan=2, sticky="w", padx=5, pady=5)
+        ttk.Entry(auftrag_frame, textvariable=self.beschreibung_var, width=70).grid(row=0, column=1, columnspan=3, sticky="w", padx=5, pady=5)
         
         ttk.Label(auftrag_frame, text="Status:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
         self.status_var = tk.StringVar(value="Offen")
@@ -76,7 +76,7 @@ class AuftragsDialog:
         
         # Notizen
         ttk.Label(auftrag_frame, text="Notizen:").grid(row=3, column=0, sticky="nw", padx=5, pady=5)
-        self.notizen_text = tk.Text(auftrag_frame, height=4, width=50)
+        self.notizen_text = tk.Text(auftrag_frame, height=5, width=70)  # Größeres Textfeld
         self.notizen_text.grid(row=3, column=1, columnspan=3, sticky="w", padx=5, pady=5)
         
         # Ersatzteile
@@ -89,27 +89,43 @@ class AuftragsDialog:
         
         ttk.Button(teile_btn_frame, text="Teil hinzufügen", command=self.add_part).pack(side="left", padx=5)
         ttk.Button(teile_btn_frame, text="Teil entfernen", command=self.remove_part).pack(side="left", padx=5)
+        # Rabatt bearbeiten Button
+        ttk.Button(teile_btn_frame, text="Rabatt bearbeiten", command=self.edit_rabatt).pack(side="left", padx=5)
         
         # Tabelle für Teile
         table_frame = ttk.Frame(teile_frame)
         table_frame.pack(fill="both", expand=True, pady=5)
         
-        self.teile_tree = ttk.Treeview(table_frame, columns=('id', 'name', 'menge', 'preis'), show='headings', height=5)
+        # Tabellenspalten erweitern für Rabatt
+        self.teile_tree = ttk.Treeview(table_frame, columns=('id', 'name', 'menge', 'preis', 'rabatt', 'gesamtpreis'), 
+                                      show='headings', height=8)  # Höhere Tabelle
         self.teile_tree.heading('id', text='ID')
         self.teile_tree.heading('name', text='Bezeichnung')
         self.teile_tree.heading('menge', text='Menge')
-        self.teile_tree.heading('preis', text='Einzelpreis (€)')
+        self.teile_tree.heading('preis', text='Einzelpreis (CHF)')
+        self.teile_tree.heading('rabatt', text='Rabatt (%)')  # Neue Spalte für Rabatt
+        self.teile_tree.heading('gesamtpreis', text='Gesamtpreis (CHF)')  # Neue Spalte für Gesamtpreis nach Rabatt
         
         self.teile_tree.column('id', width=50, anchor='center')
-        self.teile_tree.column('name', width=250)
+        self.teile_tree.column('name', width=300)
         self.teile_tree.column('menge', width=80, anchor='center')
         self.teile_tree.column('preis', width=100, anchor='e')
+        self.teile_tree.column('rabatt', width=80, anchor='center')  # Breite für Rabatt-Spalte
+        self.teile_tree.column('gesamtpreis', width=120, anchor='e')  # Breite für Gesamtpreis-Spalte
         
         vsb = ttk.Scrollbar(table_frame, orient="vertical", command=self.teile_tree.yview)
         self.teile_tree.configure(yscrollcommand=vsb.set)
         
         vsb.pack(side="right", fill="y")
         self.teile_tree.pack(side="left", fill="both", expand=True)
+        
+        # Auftragssumme anzeigen
+        summen_frame = ttk.Frame(main_frame)
+        summen_frame.pack(fill="x", expand=False, pady=5)
+        
+        ttk.Label(summen_frame, text="Auftragssumme:").pack(side="left", padx=5)
+        self.gesamtsumme_var = tk.StringVar(value="0.00 CHF")
+        ttk.Label(summen_frame, textvariable=self.gesamtsumme_var, font=("Arial", 10, "bold")).pack(side="left", padx=5)
         
         # Buttons
         btn_frame = ttk.Frame(main_frame)
@@ -142,7 +158,7 @@ class AuftragsDialog:
         cursor.execute("SELECT id, vorname || ' ' || nachname as name FROM kunden ORDER BY name")
         
         self.kunden_combo['values'] = [f"{id}: {name}" for id, name in cursor.fetchall()]
-        
+    
     def on_kunde_selected(self, event):
         """Wird ausgeführt, wenn ein Kunde ausgewählt wird"""
         try:
@@ -234,10 +250,23 @@ class AuftragsDialog:
             
         # Teile hinzufügen
         for row in cursor.fetchall():
-            self.teile_tree.insert('', 'end', values=(row[0], row[1], row[2], f"{row[3]:.2f}"))
+            # Standardwerte für Rabatt setzen
+            rabatt = 0.0
+            einzelpreis = row[3]
+            menge = row[2]
+            gesamtpreis = menge * einzelpreis
+            
+            self.teile_tree.insert('', 'end', values=(
+                row[0], row[1], menge, f"{einzelpreis:.2f} CHF", 
+                f"{rabatt:.2f}%", f"{gesamtpreis:.2f} CHF"
+            ))
+            
+        # Gesamtsumme aktualisieren
+        self.update_gesamtsumme()
             
     def new_kunde(self):
         """Öffnet den Dialog zum Anlegen eines neuen Kunden"""
+        from dialogs.kunden_dialog import KundenDialog
         kundendialog = KundenDialog(self.dialog, "Neuer Kunde", None, self.conn)
         if kundendialog.result:
             # Kundenliste aktualisieren
@@ -269,11 +298,33 @@ class AuftragsDialog:
                     if self.teile_tree.item(item)['values'][0] == teil_id:
                         # Menge aktualisieren
                         current_menge = int(self.teile_tree.item(item)['values'][2])
-                        self.teile_tree.item(item, values=(teil_id, bezeichnung, current_menge + menge, f"{preis:.2f}"))
+                        new_menge = current_menge + menge
+                        
+                        # Rabatt und Gesamtpreis berechnen
+                        rabatt_str = self.teile_tree.item(item)['values'][4]
+                        if "%" in rabatt_str:
+                            rabatt_str = rabatt_str.replace("%", "")
+                        rabatt = float(rabatt_str.replace(',', '.'))
+                        
+                        gesamtpreis = new_menge * preis * (1 - rabatt/100)
+                        
+                        self.teile_tree.item(item, values=(
+                            teil_id, bezeichnung, new_menge, f"{preis:.2f} CHF", 
+                            f"{rabatt:.2f}%", f"{gesamtpreis:.2f} CHF"
+                        ))
                         break
                 else:
-                    # Neues Teil hinzufügen
-                    self.teile_tree.insert('', 'end', values=(teil_id, bezeichnung, menge, f"{preis:.2f}"))
+                    # Neues Teil hinzufügen mit Standardrabatt 0%
+                    rabatt = 0.0
+                    gesamtpreis = menge * preis
+                    
+                    self.teile_tree.insert('', 'end', values=(
+                        teil_id, bezeichnung, menge, f"{preis:.2f} CHF", 
+                        f"{rabatt:.2f}%", f"{gesamtpreis:.2f} CHF"
+                    ))
+            
+            # Gesamtsumme aktualisieren
+            self.update_gesamtsumme()
                 
     def remove_part(self):
         """Entfernt ein Ersatzteil aus dem Auftrag"""
@@ -286,6 +337,102 @@ class AuftragsDialog:
         for item in selected_items:
             self.teile_tree.delete(item)
             
+        # Gesamtsumme aktualisieren
+        self.update_gesamtsumme()
+            
+    def edit_rabatt(self):
+        """Ändert den Rabatt für eine Position"""
+        selected_items = self.teile_tree.selection()
+        if not selected_items:
+            messagebox.showinfo("Information", "Bitte wählen Sie ein Teil aus.")
+            return
+            
+        # Aktuelle Werte auslesen
+        values = self.teile_tree.item(selected_items[0])['values']
+        
+        # Rabatt auslesen (wenn vorhanden)
+        rabatt = 0.0
+        if len(values) > 4:  # Prüfen, ob Rabatt-Spalte existiert
+            rabatt_str = str(values[4])
+            if "%" in rabatt_str:
+                rabatt_str = rabatt_str.replace("%", "")
+            try:
+                rabatt = float(rabatt_str.replace(',', '.'))
+            except ValueError:
+                rabatt = 0.0
+        
+        # Dialog zur Eingabe des neuen Rabatts
+        neuer_rabatt = simpledialog.askfloat(
+            "Rabatt bearbeiten",
+            "Neuer Rabatt (%):",
+            parent=self.dialog,
+            initialvalue=rabatt,
+            minvalue=0.0,
+            maxvalue=100.0
+        )
+        
+        if neuer_rabatt is not None:
+            # Gesamtpreis berechnen
+            teil_id = values[0]
+            bezeichnung = values[1]
+            menge = values[2]
+            einzelpreis_str = str(values[3])
+            
+            if " CHF" in einzelpreis_str:
+                einzelpreis_str = einzelpreis_str.replace(" CHF", "")
+            
+            einzelpreis = float(einzelpreis_str.replace(',', '.'))
+            
+            # Gesamtpreis berechnen (mit Rabatt)
+            gesamtpreis = menge * einzelpreis
+            rabatt_betrag = gesamtpreis * (neuer_rabatt / 100)
+            gesamtpreis_nach_rabatt = gesamtpreis - rabatt_betrag
+            
+            # Werte aktualisieren
+            self.teile_tree.item(selected_items[0], values=(
+                teil_id, bezeichnung, menge, f"{einzelpreis:.2f} CHF", 
+                f"{neuer_rabatt:.2f}%", f"{gesamtpreis_nach_rabatt:.2f} CHF"
+            ))
+            
+            # Gesamtsumme aktualisieren
+            self.update_gesamtsumme()
+        
+    def update_gesamtsumme(self):
+        """Aktualisiert die Gesamtsumme des Auftrags"""
+        gesamtsumme = 0.0
+        
+        # Alle Positionen durchlaufen
+        for item in self.teile_tree.get_children():
+            values = self.teile_tree.item(item)['values']
+            
+            # Gesamtpreis auslesen, wenn vorhanden
+            if len(values) > 5:  # Prüfen, ob Gesamtpreis-Spalte existiert
+                gesamtpreis_str = str(values[5])
+                if " CHF" in gesamtpreis_str:
+                    gesamtpreis_str = gesamtpreis_str.replace(" CHF", "")
+                try:
+                    gesamtpreis = float(gesamtpreis_str.replace(',', '.'))
+                    gesamtsumme += gesamtpreis
+                except ValueError:
+                    pass
+            else:
+                # Fallback: Berechnung ohne Rabatt
+                menge_str = str(values[2])
+                einzelpreis_str = str(values[3])
+                
+                if " CHF" in einzelpreis_str:
+                    einzelpreis_str = einzelpreis_str.replace(" CHF", "")
+                    
+                try:
+                    menge = float(menge_str)
+                    einzelpreis = float(einzelpreis_str.replace(',', '.'))
+                    gesamtsumme += menge * einzelpreis
+                except ValueError:
+                    pass
+        
+        # Gesamtsumme anzeigen
+        self.gesamtsumme_var.set(f"{gesamtsumme:.2f} CHF")
+    
     def save_data(self):
         """Speichert die Auftragsdaten"""
         # Pflichtfelder prüfen
@@ -349,12 +496,21 @@ class AuftragsDialog:
                 
                 # Einzelpreis extrahieren
                 einzelpreis_str = str(values[3])
+                if " CHF" in einzelpreis_str:
+                    einzelpreis_str = einzelpreis_str.replace(" CHF", "")
                 einzelpreis = float(einzelpreis_str.replace(',', '.'))
                 
                 cursor.execute("""
                 INSERT INTO auftrag_ersatzteile (auftrag_id, ersatzteil_id, menge, einzelpreis)
                 VALUES (?, ?, ?, ?)
                 """, (auftrag_id_to_use, ersatzteil_id, menge, einzelpreis))
+                
+                # In einer echten Anwendung würden wir hier auch den Rabatt speichern
+                # Falls Ihre Datenbank eine Spalte dafür hat, fügen Sie diese hinzu:
+                # rabatt_str = str(values[4]).replace('%', '')
+                # rabatt = float(rabatt_str.replace(',', '.'))
+                # cursor.execute("UPDATE auftrag_ersatzteile SET rabatt = ? WHERE auftrag_id = ? AND ersatzteil_id = ?",
+                #            (rabatt, auftrag_id_to_use, ersatzteil_id))
             
             # Commit ausführen und Ergebnis setzen
             self.conn.commit()
