@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Datenbankfunktionen für die Autowerkstatt-Anwendung
+Datenbankfunktionen für die Autowerkstatt-Anwendung von Gianni Schnyder
 """
 
 import os
