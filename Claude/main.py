@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-AutoMeister - Werkstattverwaltung
+AutoMeister by Gianni - Werkstattverwaltung
 Hauptdatei zum Starten der Anwendung
 """
 
@@ -14,7 +14,7 @@ from gui.main_window import AutowerkstattApp
 def main():
     """Hauptfunktion zum Starten der Anwendung"""
     root = tk.Tk()
-    root.title("AutoMeister - Werkstattverwaltung")
+    root.title("AutoMeister by Gianni - Werkstattverwaltung")
     
     # Style konfigurieren
     style = ttk.Style()

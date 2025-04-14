@@ -159,12 +159,18 @@ class TeileAuswahlDialog:
                 bestand = values[3]
                 preis = float(values[4].replace(',', '.'))
                 
+                # Einheit abrufen
+                cursor = self.conn.cursor()
+                cursor.execute("SELECT einheit FROM ersatzteile WHERE id = ?", (part_id,))
+                einheit_data = cursor.fetchone()
+                einheit = einheit_data[0] if einheit_data and einheit_data[0] else "Stk."
+                
                 # Prüfen, ob genügend Bestand vorhanden ist
                 if menge > bestand:
                     if not messagebox.askyesno("Warnung", f"Der Bestand von '{bezeichnung}' ist nicht ausreichend ({bestand}). Trotzdem hinzufügen?"):
                         continue
                         
-                selected_parts.append((part_id, bezeichnung, menge, preis))
+                selected_parts.append((part_id, bezeichnung, menge, preis, einheit))
                 
             if not selected_parts:
                 return

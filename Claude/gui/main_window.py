@@ -120,7 +120,7 @@ class AutowerkstattApp:
         # Finanzen-Tab
         self.finanzen_frame, self.finanzen_widgets = create_finanzen_tab(self.notebook, self)
         self.notebook.add(self.finanzen_frame, text="Finanzen")
-    
+
     def load_all_data(self):
         """Lädt alle Daten aus der Datenbank"""
         self.load_kunden()
@@ -196,8 +196,10 @@ class AutowerkstattApp:
     
     def open_settings(self):
         """Öffnet die Einstellungen"""
-        # In einer echten Anwendung würde hier ein Einstellungsdialog geöffnet
-        messagebox.showinfo("Hinweis", "Einstellungen sind in dieser Demo nicht implementiert.")
+        from dialogs.settings_dialog import SettingsDialog
+        settings_dialog = SettingsDialog(self.root, self.conn)
+        # Nach Schließen des Dialogs, Daten neu laden
+        self.load_all_data()
     
     def show_help(self):
         """Zeigt die Hilfe an"""

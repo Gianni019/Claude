@@ -9,6 +9,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import sqlite3
 
+from dialogs.kundenfahrzeuge_dialog import KundenFahrzeugeDialog
+
 class KundenDialog:
     """Dialog zum Erstellen und Bearbeiten von Kunden"""
     def __init__(self, parent, title, kunden_id=None, conn=None):
@@ -55,21 +57,13 @@ class KundenDialog:
         self.anschrift_var = tk.StringVar()
         ttk.Entry(personal_frame, textvariable=self.anschrift_var, width=50).grid(row=2, column=1, columnspan=3, sticky="w", padx=5, pady=2)
         
-        # Fahrzeugdaten
-        vehicle_frame = ttk.LabelFrame(fields_frame, text="Fahrzeugdaten")
-        vehicle_frame.pack(fill="x", expand=False, pady=5)
-        
-        ttk.Label(vehicle_frame, text="Fahrzeugtyp:").grid(row=0, column=0, sticky="w", padx=5, pady=2)
-        self.fahrzeug_var = tk.StringVar()
-        ttk.Entry(vehicle_frame, textvariable=self.fahrzeug_var, width=30).grid(row=0, column=1, sticky="w", padx=5, pady=2)
-        
-        ttk.Label(vehicle_frame, text="Kennzeichen:").grid(row=1, column=0, sticky="w", padx=5, pady=2)
-        self.kennzeichen_var = tk.StringVar()
-        ttk.Entry(vehicle_frame, textvariable=self.kennzeichen_var, width=15).grid(row=1, column=1, sticky="w", padx=5, pady=2)
-        
-        ttk.Label(vehicle_frame, text="Fahrgestellnummer:").grid(row=2, column=0, sticky="w", padx=5, pady=2)
-        self.fahrgestellnr_var = tk.StringVar()
-        ttk.Entry(vehicle_frame, textvariable=self.fahrgestellnr_var, width=20).grid(row=2, column=1, sticky="w", padx=5, pady=2)
+        # Hinweis auf Fahrzeugverwaltung
+        if self.kunden_id:
+            vehicle_note_frame = ttk.Frame(fields_frame)
+            vehicle_note_frame.pack(fill="x", expand=False, pady=5)
+            
+            ttk.Label(vehicle_note_frame, text="Fahrzeuge dieses Kunden können nach dem Speichern über die Funktion 'Fahrzeuge verwalten' bearbeitet werden.", 
+                     font=("Arial", 9, "italic")).pack(side="left", padx=5)
         
         # Buttons
         btn_frame = ttk.Frame(main_frame)
@@ -77,6 +71,9 @@ class KundenDialog:
         
         ttk.Button(btn_frame, text="Speichern", command=self.save_data).pack(side="right", padx=5)
         ttk.Button(btn_frame, text="Abbrechen", command=self.dialog.destroy).pack(side="right", padx=5)
+        
+        if self.kunden_id:  # Nur bei Bearbeitung anzeigen
+            ttk.Button(btn_frame, text="Fahrzeuge verwalten", command=self.manage_vehicles).pack(side="left", padx=5)
         
         # Wenn ein Kunde bearbeitet wird, Daten laden
         if self.kunden_id:
@@ -88,7 +85,7 @@ class KundenDialog:
         """Lädt die Daten des zu bearbeitenden Kunden"""
         cursor = self.conn.cursor()
         cursor.execute("""
-        SELECT vorname, nachname, telefon, email, anschrift, fahrzeug_typ, kennzeichen, fahrgestellnummer
+        SELECT vorname, nachname, telefon, email, anschrift
         FROM kunden
         WHERE id = ?
         """, (self.kunden_id,))
@@ -100,10 +97,20 @@ class KundenDialog:
             self.telefon_var.set(data[2])
             self.email_var.set(data[3])
             self.anschrift_var.set(data[4])
-            self.fahrzeug_var.set(data[5])
-            self.kennzeichen_var.set(data[6])
-            self.fahrgestellnr_var.set(data[7])
             
+    def manage_vehicles(self):
+        """Öffnet den Dialog zur Verwaltung der Fahrzeuge"""
+        if not self.kunden_id:
+            messagebox.showinfo("Information", "Bitte speichern Sie den Kunden zuerst.")
+            return
+            
+        fahrzeuge_dialog = KundenFahrzeugeDialog(
+            self.dialog, 
+            f"Fahrzeuge für {self.vorname_var.get()} {self.nachname_var.get()}", 
+            self.kunden_id, 
+            self.conn
+        )
+        
     def save_data(self):
         """Speichert die Kundendaten"""
         # Pflichtfelder prüfen
@@ -117,25 +124,25 @@ class KundenDialog:
             if self.kunden_id:  # Bestehenden Kunden aktualisieren
                 cursor.execute("""
                 UPDATE kunden SET 
-                    vorname = ?, nachname = ?, telefon = ?, email = ?, anschrift = ?,
-                    fahrzeug_typ = ?, kennzeichen = ?, fahrgestellnummer = ?
+                    vorname = ?, nachname = ?, telefon = ?, email = ?, anschrift = ?
                 WHERE id = ?
                 """, (
                     self.vorname_var.get(), self.nachname_var.get(), self.telefon_var.get(),
-                    self.email_var.get(), self.anschrift_var.get(), self.fahrzeug_var.get(),
-                    self.kennzeichen_var.get(), self.fahrgestellnr_var.get(), self.kunden_id
+                    self.email_var.get(), self.anschrift_var.get(), self.kunden_id
                 ))
             else:  # Neuen Kunden anlegen
                 cursor.execute("""
                 INSERT INTO kunden (
-                    vorname, nachname, telefon, email, anschrift,
-                    fahrzeug_typ, kennzeichen, fahrgestellnummer, erstellt_am
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                    vorname, nachname, telefon, email, anschrift, erstellt_am
+                ) VALUES (?, ?, ?, ?, ?, datetime('now'))
                 """, (
                     self.vorname_var.get(), self.nachname_var.get(), self.telefon_var.get(),
-                    self.email_var.get(), self.anschrift_var.get(), self.fahrzeug_var.get(),
-                    self.kennzeichen_var.get(), self.fahrgestellnr_var.get()
+                    self.email_var.get(), self.anschrift_var.get()
                 ))
+                
+                # Neue Kunden-ID ermitteln, falls der Dialog offen bleiben soll
+                cursor.execute("SELECT last_insert_rowid()")
+                self.kunden_id = cursor.fetchone()[0]
                 
             self.conn.commit()
             self.result = True

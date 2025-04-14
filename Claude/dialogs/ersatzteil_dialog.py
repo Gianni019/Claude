@@ -48,6 +48,13 @@ class ErsatzteilDialog:
         self.lagerort_var = tk.StringVar()
         ttk.Entry(details_frame, textvariable=self.lagerort_var, width=20).grid(row=1, column=3, sticky="w", padx=5, pady=5)
         
+        # Einheit hinzufügen
+        ttk.Label(details_frame, text="Einheit:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+        self.einheit_var = tk.StringVar(value="Stk.")
+        self.einheit_combo = ttk.Combobox(details_frame, textvariable=self.einheit_var, width=10, 
+                                         values=["Stk.", "Liter", "h", "kg", "m", "Paar", "Set"])
+        self.einheit_combo.grid(row=2, column=1, sticky="w", padx=5, pady=5)
+        
         # Lagerdaten
         lager_frame = ttk.LabelFrame(main_frame, text="Lagerbestand")
         lager_frame.pack(fill="x", expand=False, pady=5)
@@ -64,11 +71,11 @@ class ErsatzteilDialog:
         preis_frame = ttk.LabelFrame(main_frame, text="Preisdaten")
         preis_frame.pack(fill="x", expand=False, pady=5)
         
-        ttk.Label(preis_frame, text="Einkaufspreis (€):").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        ttk.Label(preis_frame, text="Einkaufspreis (CHF):").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.einkaufspreis_var = tk.StringVar(value="0.00")
         ttk.Entry(preis_frame, textvariable=self.einkaufspreis_var, width=10).grid(row=0, column=1, sticky="w", padx=5, pady=5)
         
-        ttk.Label(preis_frame, text="Verkaufspreis (€):").grid(row=0, column=2, sticky="w", padx=5, pady=5)
+        ttk.Label(preis_frame, text="Verkaufspreis (CHF):").grid(row=0, column=2, sticky="w", padx=5, pady=5)
         self.verkaufspreis_var = tk.StringVar(value="0.00")
         ttk.Entry(preis_frame, textvariable=self.verkaufspreis_var, width=10).grid(row=0, column=3, sticky="w", padx=5, pady=5)
         
@@ -109,7 +116,7 @@ class ErsatzteilDialog:
         cursor = self.conn.cursor()
         cursor.execute("""
         SELECT artikelnummer, bezeichnung, kategorie, lagerort, lagerbestand, mindestbestand,
-               einkaufspreis, verkaufspreis, lieferant
+               einkaufspreis, verkaufspreis, lieferant, einheit
         FROM ersatzteile
         WHERE id = ?
         """, (self.ersatzteil_id,))
@@ -125,6 +132,9 @@ class ErsatzteilDialog:
             self.einkaufspreis_var.set(f"{data[6]:.2f}")
             self.verkaufspreis_var.set(f"{data[7]:.2f}")
             self.lieferant_var.set(data[8])
+            # Einheit laden, falls vorhanden
+            if data[9]:
+                self.einheit_var.set(data[9])
             
     def save_data(self):
         """Speichert die Ersatzteildaten"""
@@ -147,23 +157,23 @@ class ErsatzteilDialog:
                 UPDATE ersatzteile SET 
                     artikelnummer = ?, bezeichnung = ?, kategorie = ?, lagerort = ?,
                     lagerbestand = ?, mindestbestand = ?, einkaufspreis = ?, verkaufspreis = ?,
-                    lieferant = ?
+                    lieferant = ?, einheit = ?
                 WHERE id = ?
                 """, (
                     self.artikelnr_var.get(), self.bezeichnung_var.get(), self.kategorie_var.get(), 
                     self.lagerort_var.get(), bestand, mindestbestand, einkaufspreis, verkaufspreis,
-                    self.lieferant_var.get(), self.ersatzteil_id
+                    self.lieferant_var.get(), self.einheit_var.get(), self.ersatzteil_id
                 ))
             else:  # Neues Teil anlegen
                 cursor.execute("""
                 INSERT INTO ersatzteile (
                     artikelnummer, bezeichnung, kategorie, lagerort, lagerbestand,
-                    mindestbestand, einkaufspreis, verkaufspreis, lieferant, erstellt_am
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                    mindestbestand, einkaufspreis, verkaufspreis, lieferant, einheit, erstellt_am
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                 """, (
                     self.artikelnr_var.get(), self.bezeichnung_var.get(), self.kategorie_var.get(), 
                     self.lagerort_var.get(), bestand, mindestbestand, einkaufspreis, verkaufspreis,
-                    self.lieferant_var.get()
+                    self.lieferant_var.get(), self.einheit_var.get()
                 ))
                 
             self.conn.commit()

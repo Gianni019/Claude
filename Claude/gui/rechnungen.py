@@ -8,8 +8,6 @@ Rechnungen-Tab für die Autowerkstatt-Anwendung
 import tkinter as tk
 from tkinter import ttk, messagebox
 import sqlite3
-from utils.helpers import get_selected_rechnung_id
-from dialogs.rechnungs_dialog import RechnungsDialog, RechnungsAnzeigeDialog
 
 def create_rechnungen_tab(notebook, app):
     """Rechnungen-Tab erstellen"""
@@ -83,7 +81,7 @@ def create_rechnungen_tab(notebook, app):
     vsb.pack(side="right", fill="y")
     hsb.pack(side="bottom", fill="x")
     rechnungen_tree.pack(fill="both", expand=True)
-    
+
     # Rechnungsdetails unten anzeigen
     details_frame = ttk.LabelFrame(rechnungen_frame, text="Rechnungsdetails")
     details_frame.pack(fill="x", padx=10, pady=10)
@@ -308,8 +306,8 @@ def show_rechnung_details(app, event=None):
             app.rechnungen_widgets['rechnung_status_info'].config(foreground="green")
         else:
             app.rechnungen_widgets['rechnung_status_info'].config(foreground="red")
-    
-    # Auftragsinformationen und verwendete Ersatzteile abrufen
+
+# Auftragsinformationen und verwendete Ersatzteile abrufen
     cursor.execute("""
     SELECT a.id, a.beschreibung, a.arbeitszeit
     FROM rechnungen r
@@ -342,7 +340,10 @@ def show_rechnung_details(app, event=None):
             
         # Arbeitszeit als Position hinzufügen, wenn vorhanden
         if auftrag_info[2] > 0:
-            stundensatz = 50.0  # Fester Stundensatz in CHF
+            # Stundensatz aus Konfiguration laden
+            from utils.config import get_default_stundenlohn
+            stundensatz = get_default_stundenlohn(app.conn)
+            
             arbeitszeit = auftrag_info[2]
             arbeitskosten = arbeitszeit * stundensatz
             app.rechnungen_widgets['rechnung_positions_tree'].insert('', 'end', values=(
@@ -355,6 +356,7 @@ def show_rechnung_details(app, event=None):
 
 def new_rechnung(app):
     """Erstellt eine neue Rechnung"""
+    from dialogs.rechnungs_dialog import RechnungsDialog
     rechnungsdialog = RechnungsDialog(app.root, "Neue Rechnung", None, app.conn)
     if rechnungsdialog.result:
         app.load_rechnungen()
@@ -368,29 +370,103 @@ def view_rechnung(app):
         return
         
     # Rechnungsanzeige-Dialog
+    from dialogs.rechnungs_dialog import RechnungsAnzeigeDialog
     RechnungsAnzeigeDialog(app.root, "Rechnung anzeigen", rechnung_id, app.conn)
 
 def print_rechnung(app):
     """Druckt eine Rechnung"""
+    from utils.pdf_generator import generate_invoice_pdf
+    import os
+    import subprocess
+    
     rechnung_id = get_selected_rechnung_id(app)
     if not rechnung_id:
         messagebox.showinfo("Information", "Bitte wählen Sie eine Rechnung aus.")
         return
         
-    # Hinweis anzeigen (Druck-Funktionalität würde in einer produktiven Anwendung implementiert)
-    messagebox.showinfo("Hinweis", "Druckfunktionalität ist in dieser Demo nicht vollständig implementiert. Die Rechnung würde nun gedruckt werden.")
+    success, pdf_path = generate_invoice_pdf(app.conn, rechnung_id)
+    
+    if success:
+        try:
+            if os.name == 'nt':  # Windows
+                # Mit Standard-PDF-Reader drucken
+                os.startfile(pdf_path, "print")
+            elif os.name == 'posix':  # Linux, Mac
+                # Unter Linux/Mac den Standard-Druckbefehl verwenden
+                if os.system('command -v lpr') == 0:  # Linux/Mac
+                    subprocess.call(['lpr', pdf_path])
+                else:
+                    messagebox.showinfo("Hinweis", "Bitte öffnen Sie die PDF-Datei und drucken Sie sie manuell.")
+                    # PDF öffnen
+                    if os.system('command -v xdg-open') == 0:  # Linux
+                        subprocess.call(['xdg-open', pdf_path])
+                    else:  # Mac
+                        subprocess.call(['open', pdf_path])
+        except Exception as e:
+            messagebox.showinfo("Information", f"Drucken nicht möglich: {e}")
+            # Als Fallback die PDF anzeigen
+            try:
+                if os.name == 'nt':  # Windows
+                    os.startfile(pdf_path)
+                elif os.name == 'posix':  # Linux, Mac
+                    if os.system('command -v xdg-open') == 0:  # Linux
+                        subprocess.call(['xdg-open', pdf_path])
+                    else:  # Mac
+                        subprocess.call(['open', pdf_path])
+            except Exception as e:
+                messagebox.showinfo("Information", f"PDF wurde erstellt, konnte aber nicht geöffnet werden: {pdf_path}")
+    else:
+        messagebox.showerror("Fehler", f"Fehler beim Erstellen der PDF: {pdf_path}")
 
 def save_rechnung_pdf(app):
     """Speichert eine Rechnung als PDF"""
+    from utils.pdf_generator import generate_invoice_pdf
+    from tkinter import filedialog
+    import os
+    
     rechnung_id = get_selected_rechnung_id(app)
     if not rechnung_id:
         messagebox.showinfo("Information", "Bitte wählen Sie eine Rechnung aus.")
         return
         
-    rechnung_nr = app.rechnungen_widgets['rechnungen_tree'].item(app.rechnungen_widgets['rechnungen_tree'].selection()[0])['values'][1]
+    # Dateiname vorschlagen
+    cursor = app.conn.cursor()
+    cursor.execute("SELECT rechnungsnummer FROM rechnungen WHERE id = ?", (rechnung_id,))
+    rechnungsnr = cursor.fetchone()[0].replace('/', '_').replace(' ', '_')
     
-    # Hinweis anzeigen (PDF-Export würde in einer produktiven Anwendung implementiert)
-    messagebox.showinfo("Hinweis", f"PDF-Export ist in dieser Demo nicht vollständig implementiert. Die Rechnung {rechnung_nr} würde nun als PDF gespeichert werden.")
+    default_filename = f"Rechnung_{rechnungsnr}.pdf"
+    
+    # Speicherort wählen
+    file_path = filedialog.asksaveasfilename(
+        defaultextension=".pdf",
+        filetypes=[("PDF Dateien", "*.pdf")],
+        initialfile=default_filename
+    )
+    
+    if not file_path:
+        return  # Abgebrochen
+        
+    # PDF generieren
+    success, pdf_path = generate_invoice_pdf(app.conn, rechnung_id, file_path)
+    
+    if success:
+        messagebox.showinfo("Information", f"Die Rechnung wurde als PDF gespeichert: {file_path}")
+        
+        # PDF öffnen
+        try:
+            import subprocess
+            import platform
+            
+            if platform.system() == 'Windows':
+                os.startfile(file_path)
+            elif platform.system() == 'Linux':
+                subprocess.call(['xdg-open', file_path])
+            else:  # macOS
+                subprocess.call(['open', file_path])
+        except Exception as e:
+            messagebox.showinfo("Hinweis", f"PDF wurde gespeichert, konnte aber nicht automatisch geöffnet werden: {e}")
+    else:
+        messagebox.showerror("Fehler", f"Fehler beim Speichern der PDF: {pdf_path}")
 
 def mark_rechnung_paid(app):
     """Markiert eine Rechnung als bezahlt"""
@@ -406,7 +482,7 @@ def mark_rechnung_paid(app):
         return
         
     # Zahlungsart abfragen
-    zahlungsarten = ["Bar", "Überweisung", "EC-Karte", "Kreditkarte", "PayPal"]
+    zahlungsarten = ["Bar", "Überweisung", "EC-Karte", "Kreditkarte", "PayPal", "Twint"]
     zahlungsart = tk.simpledialog.askstring(
         "Zahlungsart",
         "Bitte wählen Sie die Zahlungsart:",

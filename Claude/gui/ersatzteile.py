@@ -53,9 +53,10 @@ def create_ersatzteile_tab(notebook, app):
     table_frame = ttk.Frame(ersatzteile_frame)
     table_frame.pack(fill="both", expand=True, padx=10, pady=10)
     
-    columns = ('id', 'artikelnr', 'bezeichnung', 'kategorie', 'lagerbestand', 'mindestbestand', 'einkaufspreis', 'verkaufspreis', 'lagerort')
+    # Spalten der Treeview aktualisieren
+    columns = ('id', 'artikelnr', 'bezeichnung', 'kategorie', 'lagerbestand', 'mindestbestand', 'einkaufspreis', 'verkaufspreis', 'lagerort', 'einheit')
     ersatzteile_tree = ttk.Treeview(table_frame, columns=columns, show='headings')
-    
+
     # Spaltenkonfiguration
     ersatzteile_tree.heading('id', text='ID')
     ersatzteile_tree.heading('artikelnr', text='Artikelnr')
@@ -66,7 +67,8 @@ def create_ersatzteile_tab(notebook, app):
     ersatzteile_tree.heading('einkaufspreis', text='EK (CHF)')
     ersatzteile_tree.heading('verkaufspreis', text='VK (CHF)')
     ersatzteile_tree.heading('lagerort', text='Lagerort')
-    
+    ersatzteile_tree.heading('einheit', text='Einheit')
+
     ersatzteile_tree.column('id', width=40, anchor='center')
     ersatzteile_tree.column('artikelnr', width=80)
     ersatzteile_tree.column('bezeichnung', width=200)
@@ -76,7 +78,8 @@ def create_ersatzteile_tab(notebook, app):
     ersatzteile_tree.column('einkaufspreis', width=70, anchor='e')
     ersatzteile_tree.column('verkaufspreis', width=70, anchor='e')
     ersatzteile_tree.column('lagerort', width=80)
-    
+    ersatzteile_tree.column('einheit', width=60, anchor='center')
+        
     # Scrollbars
     vsb = ttk.Scrollbar(table_frame, orient="vertical", command=ersatzteile_tree.yview)
     hsb = ttk.Scrollbar(table_frame, orient="horizontal", command=ersatzteile_tree.xview)
@@ -140,7 +143,7 @@ def load_ersatzteile_data(app):
     cursor.execute("""
     SELECT id, artikelnummer, bezeichnung, kategorie, lagerbestand, mindestbestand,
            printf("%.2f", einkaufspreis) as einkaufspreis, 
-           printf("%.2f", verkaufspreis) as verkaufspreis, lagerort
+           printf("%.2f", verkaufspreis) as verkaufspreis, lagerort, einheit
     FROM ersatzteile
     ORDER BY bezeichnung
     """)

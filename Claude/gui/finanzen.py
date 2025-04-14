@@ -6,11 +6,14 @@ Finanzen-Tab für die Autowerkstatt-Anwendung
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import os
+import subprocess
+import platform
 
 from dialogs.finanzen_dialog import AusgabenDialog
 
@@ -274,7 +277,7 @@ def update_finanzen_data(app, event=None):
     forderungen = cursor.fetchone()[0]
     app.finanzen_widgets['finanzen_forderungen'].config(text=f"{forderungen:.2f} CHF")
     
-    # Lagerwert
+    # Lagerwert berechnen
     cursor.execute("""
     SELECT COALESCE(SUM(lagerbestand * einkaufspreis), 0)
     FROM ersatzteile
@@ -503,3 +506,315 @@ def create_einnahmen_bericht(app):
     
     cursor.execute(query)
     gesamt_einnahmen = cursor.fetchone()[0] or "0.00"
+    
+    # Bericht-Text generieren und im Bericht-Tab anzeigen
+    app.finanzen_widgets['bericht_typ_var'].set("Einnahmen nach Zeitraum")
+    app.finanzen_widgets['bericht_zeitraum_var'].set(zeitraum)
+    
+    generate_bericht(app)
+
+def generate_bericht(app):
+    """Generiert einen Finanzbericht basierend auf den ausgewählten Optionen"""
+    bericht_typ = app.finanzen_widgets['bericht_typ_var'].get()
+    zeitraum = app.finanzen_widgets['bericht_zeitraum_var'].get()
+    
+    # Bericht-Text leeren
+    app.finanzen_widgets['bericht_text'].delete(1.0, tk.END)
+    
+    # Datum für den Bericht
+    aktuelles_datum = datetime.now().strftime('%d.%m.%Y')
+    
+    # Zeitraum für SQL-Abfrage bestimmen
+    zeitraum_filter = ""
+    if zeitraum == "Dieser Monat":
+        zeitraum_filter = "WHERE strftime('%Y-%m', datum) = strftime('%Y-%m', 'now')"
+        zeitraum_text = f"Zeitraum: {zeitraum} ({datetime.now().strftime('%B %Y')})"
+    elif zeitraum == "Letzter Monat":
+        zeitraum_filter = "WHERE strftime('%Y-%m', datum) = strftime('%Y-%m', 'now', '-1 month')"
+        vormonat = (datetime.now().replace(day=1) - timedelta(days=1)).strftime('%B %Y')
+        zeitraum_text = f"Zeitraum: {zeitraum} ({vormonat})"
+    elif zeitraum == "Dieses Jahr":
+        zeitraum_filter = "WHERE strftime('%Y', datum) = strftime('%Y', 'now')"
+        zeitraum_text = f"Zeitraum: {zeitraum} ({datetime.now().year})"
+    elif zeitraum == "Letztes Jahr":
+        zeitraum_filter = "WHERE strftime('%Y', datum) = strftime('%Y', 'now', '-1 year')"
+        zeitraum_text = f"Zeitraum: {zeitraum} ({datetime.now().year - 1})"
+    else:
+        zeitraum_text = "Zeitraum: Benutzerdefiniert"
+    
+    cursor = app.conn.cursor()
+    
+    # Bericht-Header
+    bericht_header = f"AUTOMMEISTER BY GIANNI - FINANZBERICHT\n"
+    bericht_header += f"Bericht: {bericht_typ}\n"
+    bericht_header += f"{zeitraum_text}\n"
+    bericht_header += f"Erstellt am: {aktuelles_datum}\n"
+    bericht_header += "=" * 60 + "\n\n"
+    
+    app.finanzen_widgets['bericht_text'].insert(tk.END, bericht_header)
+    
+    # Berichtsinhalt je nach Typ generieren
+    if bericht_typ == "Umsatzübersicht":
+        app.finanzen_widgets['bericht_text'].insert(tk.END, "UMSATZÜBERSICHT\n\n")
+        
+        # Gesamtumsatz
+        cursor.execute(f"""
+        SELECT SUM(gesamtbetrag) as umsatz
+        FROM rechnungen
+        {zeitraum_filter}
+        """)
+        gesamtumsatz = cursor.fetchone()[0] or 0
+        
+        # Monatliche Umsätze
+        cursor.execute(f"""
+        SELECT strftime('%m/%Y', datum) as monat, SUM(gesamtbetrag) as umsatz
+        FROM rechnungen
+        {zeitraum_filter}
+        GROUP BY strftime('%Y-%m', datum)
+        ORDER BY strftime('%Y-%m', datum)
+        """)
+        
+        monats_umsaetze = cursor.fetchall()
+        
+        app.finanzen_widgets['bericht_text'].insert(tk.END, f"Gesamtumsatz: {gesamtumsatz:.2f} CHF\n\n")
+        app.finanzen_widgets['bericht_text'].insert(tk.END, "Monatliche Umsätze:\n")
+        
+        if monats_umsaetze:
+            for monat, umsatz in monats_umsaetze:
+                app.finanzen_widgets['bericht_text'].insert(tk.END, f"{monat}: {umsatz:.2f} CHF\n")
+        else:
+            app.finanzen_widgets['bericht_text'].insert(tk.END, "Keine Umsätze im gewählten Zeitraum.\n")
+    
+    elif bericht_typ == "Gewinn und Verlust":
+        app.finanzen_widgets['bericht_text'].insert(tk.END, "GEWINN UND VERLUST RECHNUNG\n\n")
+        
+        # Einnahmen
+        cursor.execute(f"""
+        SELECT SUM(gesamtbetrag) as einnahmen
+        FROM rechnungen
+        {zeitraum_filter}
+        """)
+        einnahmen = cursor.fetchone()[0] or 0
+        
+        # Ausgaben
+        cursor.execute(f"""
+        SELECT SUM(betrag) as ausgaben
+        FROM ausgaben
+        {zeitraum_filter}
+        """)
+        ausgaben = cursor.fetchone()[0] or 0
+        
+        # Materialkosten
+        cursor.execute(f"""
+        SELECT COALESCE(SUM(ae.menge * e.einkaufspreis), 0) as materialkosten
+        FROM auftrag_ersatzteile ae
+        JOIN ersatzteile e ON ae.ersatzteil_id = e.id
+        JOIN auftraege a ON ae.auftrag_id = a.id
+        JOIN rechnungen r ON a.id = r.auftrag_id
+        {zeitraum_filter.replace('datum', 'r.datum')}
+        """)
+        materialkosten = cursor.fetchone()[0] or 0
+        
+        # Gewinn berechnen
+        gewinn = einnahmen - ausgaben - materialkosten
+        
+        app.finanzen_widgets['bericht_text'].insert(tk.END, f"Einnahmen: {einnahmen:.2f} CHF\n")
+        app.finanzen_widgets['bericht_text'].insert(tk.END, f"Ausgaben: {ausgaben:.2f} CHF\n")
+        app.finanzen_widgets['bericht_text'].insert(tk.END, f"Materialkosten: {materialkosten:.2f} CHF\n")
+        app.finanzen_widgets['bericht_text'].insert(tk.END, f"Gewinn/Verlust: {gewinn:.2f} CHF\n")
+    
+    elif bericht_typ == "Einnahmen nach Kunden":
+        app.finanzen_widgets['bericht_text'].insert(tk.END, "EINNAHMEN NACH KUNDEN\n\n")
+        
+        cursor.execute(f"""
+        SELECT k.vorname || ' ' || k.nachname as kunde, 
+               SUM(r.gesamtbetrag) as umsatz,
+               COUNT(r.id) as anzahl_rechnungen
+        FROM rechnungen r
+        JOIN auftraege a ON r.auftrag_id = a.id
+        JOIN kunden k ON a.kunden_id = k.id
+        {zeitraum_filter}
+        GROUP BY k.id
+        ORDER BY umsatz DESC
+        """)
+        
+        kunden_umsaetze = cursor.fetchall()
+        
+        if kunden_umsaetze:
+            app.finanzen_widgets['bericht_text'].insert(tk.END, f"{'Kunde':<30} {'Umsatz':<15} {'Anzahl Rechnungen':<20}\n")
+            app.finanzen_widgets['bericht_text'].insert(tk.END, "-" * 65 + "\n")
+            
+            for kunde, umsatz, anzahl in kunden_umsaetze:
+                app.finanzen_widgets['bericht_text'].insert(tk.END, f"{kunde:<30} {umsatz:>12.2f} CHF {anzahl:>10}\n")
+        else:
+            app.finanzen_widgets['bericht_text'].insert(tk.END, "Keine Einnahmen im gewählten Zeitraum.\n")
+    
+    elif bericht_typ == "Ausgaben nach Kategorien":
+        app.finanzen_widgets['bericht_text'].insert(tk.END, "AUSGABEN NACH KATEGORIEN\n\n")
+        
+        cursor.execute(f"""
+        SELECT kategorie, SUM(betrag) as summe
+        FROM ausgaben
+        {zeitraum_filter}
+        GROUP BY kategorie
+        ORDER BY summe DESC
+        """)
+        
+        kategorien_ausgaben = cursor.fetchall()
+        
+        if kategorien_ausgaben:
+            app.finanzen_widgets['bericht_text'].insert(tk.END, f"{'Kategorie':<30} {'Betrag':<15}\n")
+            app.finanzen_widgets['bericht_text'].insert(tk.END, "-" * 45 + "\n")
+            
+            gesamt_ausgaben = 0
+            for kategorie, betrag in kategorien_ausgaben:
+                app.finanzen_widgets['bericht_text'].insert(tk.END, f"{kategorie:<30} {betrag:>12.2f} CHF\n")
+                gesamt_ausgaben += betrag
+            
+            app.finanzen_widgets['bericht_text'].insert(tk.END, "-" * 45 + "\n")
+            app.finanzen_widgets['bericht_text'].insert(tk.END, f"{'Gesamt':<30} {gesamt_ausgaben:>12.2f} CHF\n")
+        else:
+            app.finanzen_widgets['bericht_text'].insert(tk.END, "Keine Ausgaben im gewählten Zeitraum.\n")
+    
+    elif bericht_typ == "Lagerbestandswert":
+        app.finanzen_widgets['bericht_text'].insert(tk.END, "LAGERBESTANDSWERT\n\n")
+        
+        cursor.execute("""
+        SELECT kategorie, 
+               COUNT(*) as anzahl_artikel,
+               SUM(lagerbestand) as gesamtbestand,
+               SUM(lagerbestand * einkaufspreis) as bestandswert
+        FROM ersatzteile
+        GROUP BY kategorie
+        ORDER BY bestandswert DESC
+        """)
+        
+        kategorien_bestand = cursor.fetchall()
+        
+        if kategorien_bestand:
+            app.finanzen_widgets['bericht_text'].insert(tk.END, f"{'Kategorie':<20} {'Anzahl Artikel':<15} {'Gesamtbestand':<15} {'Bestandswert':<15}\n")
+            app.finanzen_widgets['bericht_text'].insert(tk.END, "-" * 65 + "\n")
+            
+            gesamt_wert = 0
+            for kategorie, anzahl, bestand, wert in kategorien_bestand:
+                app.finanzen_widgets['bericht_text'].insert(tk.END, f"{kategorie:<20} {anzahl:>13} {bestand:>15} {wert:>12.2f} CHF\n")
+                gesamt_wert += wert
+            
+            app.finanzen_widgets['bericht_text'].insert(tk.END, "-" * 65 + "\n")
+            app.finanzen_widgets['bericht_text'].insert(tk.END, f"{'Gesamt':<50} {gesamt_wert:>12.2f} CHF\n")
+        else:
+            app.finanzen_widgets['bericht_text'].insert(tk.END, "Keine Artikel im Lager.\n")
+    
+    elif bericht_typ == "Werkstattauslastung":
+        app.finanzen_widgets['bericht_text'].insert(tk.END, "WERKSTATTAUSLASTUNG\n\n")
+        
+        # Gesamte Arbeitszeit im Zeitraum
+        cursor.execute(f"""
+        SELECT SUM(arbeitszeit) as gesamtzeit
+        FROM auftraege
+        {zeitraum_filter.replace('datum', 'erstellt_am')}
+        """)
+        
+        gesamtzeit = cursor.fetchone()[0] or 0
+        
+        # Anzahl Aufträge pro Status
+        cursor.execute(f"""
+        SELECT status, COUNT(*) as anzahl
+        FROM auftraege
+        {zeitraum_filter.replace('datum', 'erstellt_am')}
+        GROUP BY status
+        """)
+        
+        status_counts = cursor.fetchall()
+        
+        app.finanzen_widgets['bericht_text'].insert(tk.END, f"Gesamte Arbeitszeit: {gesamtzeit:.2f} Stunden\n\n")
+        
+        if status_counts:
+            app.finanzen_widgets['bericht_text'].insert(tk.END, "Aufträge nach Status:\n")
+            for status, anzahl in status_counts:
+                app.finanzen_widgets['bericht_text'].insert(tk.END, f"{status}: {anzahl} Aufträge\n")
+        else:
+            app.finanzen_widgets['bericht_text'].insert(tk.END, "Keine Aufträge im gewählten Zeitraum.\n")
+    
+    # Fußzeile
+    app.finanzen_widgets['bericht_text'].insert(tk.END, "\n\n")
+    app.finanzen_widgets['bericht_text'].insert(tk.END, "=" * 60 + "\n")
+    app.finanzen_widgets['bericht_text'].insert(tk.END, "Hinweis: Dieser Bericht dient nur zu Informationszwecken.\n")
+    app.finanzen_widgets['bericht_text'].insert(tk.END, "© AutoMeister by Gianni\n")
+
+def save_bericht_pdf(app):
+    """Speichert den aktuellen Bericht als Text-Datei"""
+    from tkinter import filedialog
+    import os
+    
+    bericht_text = app.finanzen_widgets['bericht_text'].get(1.0, tk.END)
+    
+    if not bericht_text.strip():
+        messagebox.showinfo("Information", "Bitte generieren Sie zuerst einen Bericht.")
+        return
+    
+    # Standardspeicherort im Dokumente-Ordner
+    dokumente_pfad = os.path.join(os.path.expanduser("~"), "Documents", "AutoMeister")
+    
+    # Verzeichnis erstellen, falls es nicht existiert
+    if not os.path.exists(dokumente_pfad):
+        try:
+            os.makedirs(dokumente_pfad)
+        except Exception as e:
+            print(f"Fehler beim Erstellen des Verzeichnisses: {e}")
+            
+    # Berichte-Unterordner erstellen
+    berichte_pfad = os.path.join(dokumente_pfad, "Berichte")
+    if not os.path.exists(berichte_pfad):
+        try:
+            os.makedirs(berichte_pfad)
+        except Exception as e:
+            print(f"Fehler beim Erstellen des Berichte-Verzeichnisses: {e}")
+    
+    # Dateiname generieren
+    bericht_typ = app.finanzen_widgets['bericht_typ_var'].get()
+    zeitraum = app.finanzen_widgets['bericht_zeitraum_var'].get().replace(" ", "_")
+    datum = datetime.now().strftime('%Y%m%d_%H%M%S')
+    
+    # Als Textdatei speichern statt PDF, da wir keine echte PDF-Erzeugung haben
+    dateiname = f"Bericht_{bericht_typ.replace(' ', '_')}_{zeitraum}_{datum}.txt"
+    
+    # Vollständiger Pfad
+    datei_pfad = os.path.join(berichte_pfad, dateiname)
+    
+    # Dateidialog anzeigen mit Vorschlag
+    datei_pfad = filedialog.asksaveasfilename(
+        defaultextension=".txt",
+        filetypes=[("Text Dateien", "*.txt")],
+        initialdir=berichte_pfad,
+        initialfile=dateiname,
+        title="Bericht speichern unter"
+    )
+    
+    if not datei_pfad:
+        return  # Abbruch, wenn Dialog geschlossen wird
+        
+    try:
+        # Text-Datei erzeugen
+        with open(datei_pfad, 'w', encoding='utf-8') as f:
+            f.write(bericht_text)
+        
+        messagebox.showinfo("Information", f"Bericht wurde gespeichert unter:\n{datei_pfad}")
+        
+        # Versuche, die Datei zu öffnen
+        try:
+            import os
+            import subprocess
+            import platform
+            
+            if platform.system() == 'Windows':
+                os.startfile(datei_pfad)
+            elif platform.system() == 'Darwin':  # macOS
+                subprocess.call(['open', datei_pfad])
+            else:  # Linux
+                subprocess.call(['xdg-open', datei_pfad])
+        except Exception as e:
+            print(f"Fehler beim Öffnen der Datei: {e}")
+            messagebox.showinfo("Hinweis", f"Die Datei konnte nicht automatisch geöffnet werden. Sie finden sie unter:\n{datei_pfad}")
+    except Exception as e:
+        messagebox.showerror("Fehler", f"Fehler beim Speichern der Datei: {e}")

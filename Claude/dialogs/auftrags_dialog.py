@@ -224,9 +224,6 @@ class AuftragsDialog:
             
     def save_data(self):
         """Speichert die Auftragsdaten"""
-        # Debugging-Ausgabe hinzufügen
-        print("Speichern gestartet")
-        
         # Pflichtfelder prüfen
         if not self.kunde_var.get() or not self.beschreibung_var.get():
             messagebox.showerror("Fehler", "Bitte wählen Sie einen Kunden und geben Sie eine Beschreibung ein.")
@@ -239,7 +236,6 @@ class AuftragsDialog:
             cursor = self.conn.cursor()
             
             if self.auftrag_id:  # Bestehenden Auftrag aktualisieren
-                print(f"Aktualisiere Auftrag {self.auftrag_id}")
                 cursor.execute("""
                 UPDATE auftraege SET 
                     kunden_id = ?, beschreibung = ?, status = ?, prioritaet = ?,
@@ -254,20 +250,9 @@ class AuftragsDialog:
                 # Bestehende Teile-Verknüpfungen löschen
                 cursor.execute("DELETE FROM auftrag_ersatzteile WHERE auftrag_id = ?", (self.auftrag_id,))
                 
-                # Neue Teile-Verknüpfungen hinzufügen
-                for item in self.teile_tree.get_children():
-                    values = self.teile_tree.item(item)['values']
-                    ersatzteil_id = values[0]
-                    menge = values[2]
-                    einzelpreis = float(values[3].replace(",", "."))
-                    
-                    cursor.execute("""
-                    INSERT INTO auftrag_ersatzteile (auftrag_id, ersatzteil_id, menge, einzelpreis)
-                    VALUES (?, ?, ?, ?)
-                    """, (self.auftrag_id, ersatzteil_id, menge, einzelpreis))
+                auftrag_id_to_use = self.auftrag_id  # Verwende die bestehende Auftrags-ID
                     
             else:  # Neuen Auftrag anlegen
-                print("Erstelle neuen Auftrag")
                 cursor.execute("""
                 INSERT INTO auftraege (
                     kunden_id, beschreibung, status, prioritaet, erstellt_am,
@@ -282,26 +267,42 @@ class AuftragsDialog:
                 
                 # Die ID des neuen Auftrags ermitteln
                 cursor.execute("SELECT last_insert_rowid()")
-                new_auftrag_id = cursor.fetchone()[0]
+                auftrag_id_to_use = cursor.fetchone()[0]
+            
+            # Teile zum Auftrag hinzufügen (jetzt unabhängig davon, ob neu oder bestehend)
+            for item in self.teile_tree.get_children():
+                values = self.teile_tree.item(item)['values']
+                ersatzteil_id = values[0]
+                bezeichnung = values[1]
+                menge = values[2]
                 
-                # Teile zum neuen Auftrag hinzufügen
-                for item in self.teile_tree.get_children():
-                    values = self.teile_tree.item(item)['values']
-                    ersatzteil_id = values[0]
-                    menge = values[2]
-                    einzelpreis = float(values[3].replace(",", "."))
-                    
-                    cursor.execute("""
-                    INSERT INTO auftrag_ersatzteile (auftrag_id, ersatzteil_id, menge, einzelpreis)
-                    VALUES (?, ?, ?, ?)
-                    """, (new_auftrag_id, ersatzteil_id, menge, einzelpreis))
+                # Einzelpreis extrahieren
+                einzelpreis_str = str(values[3])
+                if " CHF" in einzelpreis_str:
+                    einzelpreis_str = einzelpreis_str.replace(" CHF", "")
+                elif " €" in einzelpreis_str:
+                    einzelpreis_str = einzelpreis_str.replace(" €", "")
+                einzelpreis = float(einzelpreis_str.replace(',', '.'))
+                
+                # Rabatt aus Bezeichnung extrahieren
+                rabatt = 0.0
+                if "Rabatt:" in bezeichnung:
+                    try:
+                        rabatt_text = bezeichnung.split("Rabatt: ")[1].split("%")[0]
+                        rabatt = float(rabatt_text)
+                        bezeichnung = bezeichnung.split(" (Rabatt:")[0]
+                    except (IndexError, ValueError):
+                        pass
+                
+                cursor.execute("""
+                INSERT INTO auftrag_ersatzteile (auftrag_id, ersatzteil_id, menge, einzelpreis, rabatt)
+                VALUES (?, ?, ?, ?, ?)
+                """, (auftrag_id_to_use, ersatzteil_id, menge, einzelpreis, rabatt))
             
             # Commit ausführen und Ergebnis setzen
-            print("Führe Commit aus")
             self.conn.commit()
             self.result = True
             self.dialog.destroy()
-            print("Speichern erfolgreich abgeschlossen")
         except Exception as e:
             # Detaillierte Fehlerinformationen anzeigen
             print(f"Fehler beim Speichern: {e}")

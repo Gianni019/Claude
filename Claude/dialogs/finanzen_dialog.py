@@ -143,3 +143,5 @@ class AusgabenDialog:
         except sqlite3.Error as e:
             messagebox.showerror("Fehler", f"Fehler beim Speichern der Ausgabe: {e}")
             self.conn.rollback()
+
+            
