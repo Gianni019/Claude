@@ -40,8 +40,15 @@ class AuftragsDialog:
         self.kunde_var = tk.StringVar()
         self.kunden_combo = ttk.Combobox(kunde_frame, textvariable=self.kunde_var, width=40)
         self.kunden_combo.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        self.kunden_combo.bind("<<ComboboxSelected>>", self.on_kunde_selected)
         
         ttk.Button(kunde_frame, text="Neuer Kunde", command=self.new_kunde).grid(row=0, column=2, padx=5, pady=5)
+        
+        # Fahrzeugauswahl
+        ttk.Label(kunde_frame, text="Fahrzeug:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+        self.fahrzeug_var = tk.StringVar()
+        self.fahrzeug_combo = ttk.Combobox(kunde_frame, textvariable=self.fahrzeug_var, width=40)
+        self.fahrzeug_combo.grid(row=1, column=1, sticky="w", padx=5, pady=5)
         
         # Auftragsdaten
         auftrag_frame = ttk.LabelFrame(main_frame, text="Auftragsdaten")
@@ -124,6 +131,8 @@ class AuftragsDialog:
             kunde = cursor.fetchone()
             if kunde:
                 self.kunde_var.set(f"{kunde[0]}: {kunde[1]}")
+                # Fahrzeuge für ausgewählten Kunden laden
+                self.load_fahrzeuge_for_kunde(self.kunden_id)
             
         self.dialog.wait_window()
         
@@ -134,6 +143,42 @@ class AuftragsDialog:
         
         self.kunden_combo['values'] = [f"{id}: {name}" for id, name in cursor.fetchall()]
         
+    def on_kunde_selected(self, event):
+        """Wird ausgeführt, wenn ein Kunde ausgewählt wird"""
+        try:
+            # Kunden-ID aus Combobox-Auswahl extrahieren
+            kunden_id = int(self.kunde_var.get().split(":")[0])
+            # Fahrzeuge für diesen Kunden laden
+            self.load_fahrzeuge_for_kunde(kunden_id)
+        except (ValueError, IndexError):
+            # Bei ungültiger Auswahl nichts tun
+            pass
+            
+    def load_fahrzeuge_for_kunde(self, kunden_id):
+        """Lädt die Fahrzeuge für den ausgewählten Kunden"""
+        if not kunden_id:
+            # Fahrzeug-Combobox leeren
+            self.fahrzeug_combo['values'] = []
+            self.fahrzeug_var.set("")
+            return
+            
+        cursor = self.conn.cursor()
+        cursor.execute("""
+        SELECT id, fahrzeug_typ || ' (' || COALESCE(kennzeichen, 'ohne Kennzeichen') || ')' as fahrzeug_info
+        FROM fahrzeuge
+        WHERE kunden_id = ?
+        ORDER BY fahrzeug_typ
+        """, (kunden_id,))
+        
+        fahrzeuge = cursor.fetchall()
+        if fahrzeuge:
+            self.fahrzeug_combo['values'] = [f"{id}: {info}" for id, info in fahrzeuge]
+            # Erstes Fahrzeug auswählen
+            self.fahrzeug_var.set(self.fahrzeug_combo['values'][0])
+        else:
+            self.fahrzeug_combo['values'] = ["Kein Fahrzeug vorhanden"]
+            self.fahrzeug_var.set("")
+        
     def load_data(self):
         """Lädt die Daten des zu bearbeitenden Auftrags"""
         cursor = self.conn.cursor()
@@ -141,7 +186,7 @@ class AuftragsDialog:
         # Auftragsdaten laden
         cursor.execute("""
         SELECT a.kunden_id, k.vorname || ' ' || k.nachname as kundenname, a.beschreibung, 
-               a.status, a.prioritaet, a.arbeitszeit, a.notizen
+               a.status, a.prioritaet, a.arbeitszeit, a.notizen, a.fahrzeug_id
         FROM auftraege a
         JOIN kunden k ON a.kunden_id = k.id
         WHERE a.id = ?
@@ -149,7 +194,10 @@ class AuftragsDialog:
         
         data = cursor.fetchone()
         if data:
-            self.kunde_var.set(f"{data[0]}: {data[1]}")
+            kunden_id = data[0]
+            fahrzeug_id = data[7]
+            
+            self.kunde_var.set(f"{kunden_id}: {data[1]}")
             self.beschreibung_var.set(data[2])
             self.status_var.set(data[3])
             self.prioritaet_var.set(data[4])
@@ -157,6 +205,20 @@ class AuftragsDialog:
             self.notizen_text.delete(1.0, tk.END)
             if data[6]:
                 self.notizen_text.insert(tk.END, data[6])
+            
+            # Fahrzeuge für Kunden laden    
+            self.load_fahrzeuge_for_kunde(kunden_id)
+            
+            # Fahrzeug auswählen, wenn vorhanden
+            if fahrzeug_id:
+                cursor.execute("""
+                SELECT id, fahrzeug_typ || ' (' || COALESCE(kennzeichen, 'ohne Kennzeichen') || ')' as fahrzeug_info
+                FROM fahrzeuge
+                WHERE id = ?
+                """, (fahrzeug_id,))
+                fahrzeug = cursor.fetchone()
+                if fahrzeug:
+                    self.fahrzeug_var.set(f"{fahrzeug[0]}: {fahrzeug[1]}")
                 
         # Verwendete Teile laden
         cursor.execute("""
@@ -193,13 +255,15 @@ class AuftragsDialog:
             last_kunde = cursor.fetchone()
             if last_kunde:
                 self.kunde_var.set(f"{last_kunde[0]}: {last_kunde[1]}")
+                # Fahrzeuge für diesen Kunden laden (wird in diesem Fall leer sein)
+                self.load_fahrzeuge_for_kunde(last_kunde[0])
                 
     def add_part(self):
         """Fügt ein Ersatzteil zum Auftrag hinzu"""
         teile_dialog = TeileAuswahlDialog(self.dialog, "Teil hinzufügen", None, self.conn)
         if teile_dialog.result:
             # Ausgewähltes Teil hinzufügen
-            for teil_id, bezeichnung, menge, preis in teile_dialog.result:
+            for teil_id, bezeichnung, menge, preis, einheit in teile_dialog.result:
                 # Prüfen, ob Teil bereits in der Liste ist
                 for item in self.teile_tree.get_children():
                     if self.teile_tree.item(item)['values'][0] == teil_id:
@@ -233,18 +297,26 @@ class AuftragsDialog:
             # Kunden-ID aus Combobox-Auswahl extrahieren
             kunden_id = int(self.kunde_var.get().split(":")[0])
             
+            # Fahrzeug-ID extrahieren, falls vorhanden
+            fahrzeug_id = None
+            if self.fahrzeug_var.get() and ":" in self.fahrzeug_var.get():
+                try:
+                    fahrzeug_id = int(self.fahrzeug_var.get().split(":")[0])
+                except (ValueError, IndexError):
+                    fahrzeug_id = None
+            
             cursor = self.conn.cursor()
             
             if self.auftrag_id:  # Bestehenden Auftrag aktualisieren
                 cursor.execute("""
                 UPDATE auftraege SET 
                     kunden_id = ?, beschreibung = ?, status = ?, prioritaet = ?,
-                    arbeitszeit = ?, notizen = ?
+                    arbeitszeit = ?, notizen = ?, fahrzeug_id = ?
                 WHERE id = ?
                 """, (
                     kunden_id, self.beschreibung_var.get(), self.status_var.get(), 
                     self.prioritaet_var.get(), float(self.arbeitszeit_var.get() or 0),
-                    self.notizen_text.get(1.0, tk.END).strip(), self.auftrag_id
+                    self.notizen_text.get(1.0, tk.END).strip(), fahrzeug_id, self.auftrag_id
                 ))
                 
                 # Bestehende Teile-Verknüpfungen löschen
@@ -256,13 +328,13 @@ class AuftragsDialog:
                 cursor.execute("""
                 INSERT INTO auftraege (
                     kunden_id, beschreibung, status, prioritaet, erstellt_am,
-                    abgeschlossen_am, arbeitszeit, notizen
-                ) VALUES (?, ?, ?, ?, datetime('now'), ?, ?, ?)
+                    abgeschlossen_am, arbeitszeit, notizen, fahrzeug_id
+                ) VALUES (?, ?, ?, ?, datetime('now'), ?, ?, ?, ?)
                 """, (
                     kunden_id, self.beschreibung_var.get(), self.status_var.get(), 
                     self.prioritaet_var.get(), 
                     datetime.now().strftime('%Y-%m-%d %H:%M:%S') if self.status_var.get() == "Abgeschlossen" else None,
-                    float(self.arbeitszeit_var.get() or 0), self.notizen_text.get(1.0, tk.END).strip()
+                    float(self.arbeitszeit_var.get() or 0), self.notizen_text.get(1.0, tk.END).strip(), fahrzeug_id
                 ))
                 
                 # Die ID des neuen Auftrags ermitteln
@@ -273,31 +345,16 @@ class AuftragsDialog:
             for item in self.teile_tree.get_children():
                 values = self.teile_tree.item(item)['values']
                 ersatzteil_id = values[0]
-                bezeichnung = values[1]
                 menge = values[2]
                 
                 # Einzelpreis extrahieren
                 einzelpreis_str = str(values[3])
-                if " CHF" in einzelpreis_str:
-                    einzelpreis_str = einzelpreis_str.replace(" CHF", "")
-                elif " €" in einzelpreis_str:
-                    einzelpreis_str = einzelpreis_str.replace(" €", "")
                 einzelpreis = float(einzelpreis_str.replace(',', '.'))
                 
-                # Rabatt aus Bezeichnung extrahieren
-                rabatt = 0.0
-                if "Rabatt:" in bezeichnung:
-                    try:
-                        rabatt_text = bezeichnung.split("Rabatt: ")[1].split("%")[0]
-                        rabatt = float(rabatt_text)
-                        bezeichnung = bezeichnung.split(" (Rabatt:")[0]
-                    except (IndexError, ValueError):
-                        pass
-                
                 cursor.execute("""
-                INSERT INTO auftrag_ersatzteile (auftrag_id, ersatzteil_id, menge, einzelpreis, rabatt)
-                VALUES (?, ?, ?, ?, ?)
-                """, (auftrag_id_to_use, ersatzteil_id, menge, einzelpreis, rabatt))
+                INSERT INTO auftrag_ersatzteile (auftrag_id, ersatzteil_id, menge, einzelpreis)
+                VALUES (?, ?, ?, ?)
+                """, (auftrag_id_to_use, ersatzteil_id, menge, einzelpreis))
             
             # Commit ausführen und Ergebnis setzen
             self.conn.commit()

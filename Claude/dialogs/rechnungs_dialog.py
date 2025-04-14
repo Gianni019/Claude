@@ -228,7 +228,6 @@ class RechnungsDialog:
         
         # Positionen automatisch aus Auftrag laden
         self.load_auftrag_positionen()
-    
     def generate_rechnung_nummer(self):
         """Generiert eine neue Rechnungsnummer"""
         cursor = self.conn.cursor()
@@ -558,7 +557,7 @@ class RechnungsDialog:
             import subprocess
             
             success, pdf_path = generate_invoice_pdf(self.conn, rechnung_id)
-            
+
             if success:
                 # PDF-Datei öffnen
                 try:
@@ -645,6 +644,7 @@ class PositionDialog:
             self.dialog.destroy()
         except ValueError:
             messagebox.showerror("Fehler", "Bitte geben Sie gültige Werte für Menge und Preis ein.")
+
 
 class RechnungsAnzeigeDialog:
     """Dialog zur Anzeige einer Rechnung"""

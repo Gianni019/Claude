@@ -2,13 +2,14 @@
 # -*- coding: utf-8 -*-
 
 """
-PDF-Generator für die Autowerkstatt-Anwendung
+PDF-Generator für die Autowerkstatt-Anwendung mit direkter Logo-Einbettung
 """
 
 import os
 import base64
 import tempfile
 from datetime import datetime
+from io import BytesIO
 
 # ReportLab-Import
 from reportlab.lib.pagesizes import A4
@@ -56,18 +57,29 @@ def generate_invoice_pdf(conn, rechnung_id, output_path=None):
             
         kunden_id, kundenname, anschrift, telefon, email = kunde
         
-        # Fahrzeugdaten abrufen (erstes gefundenes Fahrzeug oder None)
+        # Fahrzeugdaten abrufen (bevorzugt vom in Auftrag gespeicherten Fahrzeug)
         cursor.execute("""
         SELECT f.fahrzeug_typ, f.kennzeichen, f.fahrgestellnummer
-        FROM fahrzeuge f
-        JOIN auftraege a ON f.kunden_id = a.kunden_id
+        FROM auftraege a
+        LEFT JOIN fahrzeuge f ON a.fahrzeug_id = f.id
         WHERE a.id = ?
-        LIMIT 1
         """, (auftrag_id,))
         
         fahrzeug_data = cursor.fetchone()
-        fahrzeug_info = ""
         
+        # Wenn kein Fahrzeug im Auftrag gespeichert ist, versuche erstes Fahrzeug des Kunden
+        if not fahrzeug_data or (not fahrzeug_data[0] and not fahrzeug_data[1] and not fahrzeug_data[2]):
+            cursor.execute("""
+            SELECT f.fahrzeug_typ, f.kennzeichen, f.fahrgestellnummer
+            FROM fahrzeuge f
+            JOIN auftraege a ON f.kunden_id = a.kunden_id
+            WHERE a.id = ?
+            ORDER BY f.id
+            LIMIT 1
+            """, (auftrag_id,))
+            fahrzeug_data = cursor.fetchone()
+        
+        fahrzeug_info = ""
         if fahrzeug_data:
             fahrzeug_typ, kennzeichen, fahrgestellnr = fahrzeug_data
             if fahrzeug_typ:
@@ -160,6 +172,13 @@ def generate_invoice_pdf(conn, rechnung_id, output_path=None):
             parent=styles['Normal'],
             alignment=TA_LEFT
         ))
+        styles.add(ParagraphStyle(
+            name='CompanyName',
+            parent=styles['Normal'],
+            alignment=TA_LEFT,
+            fontSize=14,
+            fontName='Helvetica-Bold'
+        ))
         
         # Inhalte für das PDF
         elements = []
@@ -167,29 +186,14 @@ def generate_invoice_pdf(conn, rechnung_id, output_path=None):
         # Logo und Firmeninformationen
         header_data = [[]]
         
-        # Logo, falls vorhanden
+        # Firmeninformationen mit größerem Firmennamen
         if logo_data:
-            try:
-                # Base64-Daten in temporäre Datei dekodieren
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as temp_logo:
-                    temp_logo_path = temp_logo.name
-                    temp_logo.write(base64.b64decode(logo_data))
-                
-                # Logo mit begrenzter Höhe einfügen
-                logo_img = RLImage(temp_logo_path, width=4*cm, height=3*cm)
-                header_data[0].append(logo_img)
-                
-                # Temporäre Datei nach Verwendung löschen
-                os.unlink(temp_logo_path)
-            except Exception as e:
-                print(f"Fehler beim Einfügen des Logos: {e}")
-                header_data[0].append("")
+            # Anstelle eines Logos nur den Firmennamen größer darstellen
+            header_data[0].append(Paragraph(f"<b>{company_info['name']}</b>", styles['CompanyName']))
         else:
-            header_data[0].append("")
-        
-        # Firmeninformationen
+            header_data[0].append(Paragraph(f"<b>{company_info['name']}</b>", styles['CompanyName']))
+            
         company_text = f"""
-        <b>{company_info['name']}</b>
         {company_info['address']}
         Tel: {company_info['phone']}
         E-Mail: {company_info['email']}

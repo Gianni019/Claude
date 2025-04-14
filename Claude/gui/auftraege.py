@@ -423,17 +423,30 @@ def create_invoice_for_auftrag(app):
     
     if existing_invoice:
         messagebox.showinfo("Information", "Für diesen Auftrag existiert bereits eine Rechnung.")
-        # Zur Rechnung springen
-        app.notebook.select(4)  # Index 4 = Rechnungen-Tab
         
-        # Rechnung in der Tabelle suchen und auswählen
-        for item in app.rechnungen_widgets['rechnungen_tree'].get_children():
-            values = app.rechnungen_widgets['rechnungen_tree'].item(item)['values']
-            if values[0] == existing_invoice[0]:
-                app.rechnungen_widgets['rechnungen_tree'].selection_set(item)
-                app.rechnungen_widgets['rechnungen_tree'].see(item)
-                app.rechnungen_widgets['show_rechnung_details'](None)
-                break
+        # Hier das Problem beheben: Prüfen, ob die Tabs und Widgets existieren, bevor wir darauf zugreifen
+        try:
+            # Zur Rechnung springen, falls die Tabs existieren
+            if hasattr(app, 'notebook') and app.notebook is not None:
+                app.notebook.select(4)  # Index 4 = Rechnungen-Tab
+                
+                # Rechnung in der Tabelle suchen und auswählen, falls die Widgets existieren
+                if hasattr(app, 'rechnungen_widgets') and app.rechnungen_widgets is not None:
+                    if 'rechnungen_tree' in app.rechnungen_widgets and app.rechnungen_widgets['rechnungen_tree'] is not None:
+                        for item in app.rechnungen_widgets['rechnungen_tree'].get_children():
+                            values = app.rechnungen_widgets['rechnungen_tree'].item(item)['values']
+                            if values[0] == existing_invoice[0]:
+                                app.rechnungen_widgets['rechnungen_tree'].selection_set(item)
+                                app.rechnungen_widgets['rechnungen_tree'].see(item)
+                                
+                                # Prüfen, ob die show_rechnung_details-Funktion existiert
+                                if 'show_rechnung_details' in app.rechnungen_widgets and callable(app.rechnungen_widgets['show_rechnung_details']):
+                                    app.rechnungen_widgets['show_rechnung_details'](None)
+                                break
+        except Exception as e:
+            # Bei einem Fehler eine Meldung anzeigen, aber nicht abstürzen
+            messagebox.showinfo("Hinweis", f"Die Rechnung existiert bereits, aber konnte nicht angezeigt werden.")
+            print(f"Fehler beim Anzeigen der Rechnung: {e}")
                 
         return
         
@@ -443,5 +456,9 @@ def create_invoice_for_auftrag(app):
         app.load_rechnungen()
         app.update_status("Neue Rechnung erstellt")
         
-        # Zum Rechnungen-Tab wechseln
-        app.notebook.select(4)  # Index 4 = Rechnungen-Tab
+        # Zum Rechnungen-Tab wechseln, mit Fehlerbehandlung
+        try:
+            if hasattr(app, 'notebook') and app.notebook is not None:
+                app.notebook.select(4)  # Index 4 = Rechnungen-Tab
+        except Exception as e:
+            print(f"Fehler beim Wechseln zum Rechnungen-Tab: {e}")

@@ -27,6 +27,9 @@ def update_database_schema(conn):
     
     if current_version < 3:
         update_to_version_3(conn)
+        
+    if current_version < 4:
+        update_to_version_4(conn)
     
     # Standardkonfiguration initialisieren
     init_default_config(conn)
@@ -101,3 +104,36 @@ def update_to_version_3(conn):
     
     conn.commit()
     print("Datenbankschema auf Version 3 aktualisiert.")
+
+def update_to_version_4(conn):
+    """Aktualisiert die Datenbank auf Version 4 (Fahrzeug-ID in Aufträgen)"""
+    print("Aktualisiere Datenbankschema auf Version 4...")
+    cursor = conn.cursor()
+    
+    # Spalte für Fahrzeug-ID zur auftraege-Tabelle hinzufügen, wenn nicht vorhanden
+    cursor.execute("PRAGMA table_info(auftraege)")
+    columns = [info[1] for info in cursor.fetchall()]
+    
+    if 'fahrzeug_id' not in columns:
+        cursor.execute("ALTER TABLE auftraege ADD COLUMN fahrzeug_id INTEGER")
+        
+        # Optional: Bestehende Aufträge mit Fahrzeug-IDs aktualisieren
+        # Für jeden Auftrag das erste Fahrzeug des Kunden verwenden
+        cursor.execute("""
+        SELECT a.id, a.kunden_id, MIN(f.id) as fahrzeug_id
+        FROM auftraege a
+        JOIN fahrzeuge f ON a.kunden_id = f.kunden_id
+        GROUP BY a.id
+        """)
+        
+        for auftrag_id, kunden_id, fahrzeug_id in cursor.fetchall():
+            if fahrzeug_id:
+                cursor.execute("""
+                UPDATE auftraege SET fahrzeug_id = ? WHERE id = ?
+                """, (fahrzeug_id, auftrag_id))
+    
+    # Schemaversion aktualisieren
+    cursor.execute("PRAGMA user_version = 4")
+    
+    conn.commit()
+    print("Datenbankschema auf Version 4 aktualisiert.")
