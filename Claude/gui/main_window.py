@@ -19,6 +19,8 @@ from gui.auftraege import create_auftraege_tab
 from gui.ersatzteile import create_ersatzteile_tab
 from gui.rechnungen import create_rechnungen_tab
 from gui.finanzen import create_finanzen_tab
+from gui.reports import ErweitertesBerichtswesen
+from gui.calendar_manager import KalenderVerwaltung
 
 # Moderne Farbpalette
 COLORS = {
@@ -146,6 +148,8 @@ class ModernAutowerkstattApp:
             ("Ersatzteile", lambda: self.notebook.select(3), "parts"),
             ("Rechnungen", lambda: self.notebook.select(4), "invoices"),
             ("Finanzen", lambda: self.notebook.select(5), "finances"),
+            ("Kalender", self.open_calendar, "calendar"),  # NEU
+            ("Berichte", self.open_reports, "reports"),    # NEU
             ("Einstellungen", self.open_settings, "settings")
         ]
         
@@ -175,7 +179,7 @@ class ModernAutowerkstattApp:
             btn.bind("<Leave>", lambda e, b=btn: b.config(bg=COLORS["bg_dark"]))
             btn.bind("<Button-1>", lambda e, cmd=command: cmd())
             
-            self.nav_buttons.append((btn, i))  # Button mit Index speichern
+            self.nav_buttons.append((btn, i if i < 6 else None))  # Button mit Index speichern
     
     def on_tab_change(self, event):
         """Aktualisiert die Hervorhebung im Navigationsmenü beim Tab-Wechsel"""
@@ -387,3 +391,12 @@ Entwickelt mit Python und Tkinter.
             
             # Zum Ersatzteile-Tab wechseln
             self.notebook.select(3)  # Index 3 = Ersatzteile-Tab
+
+    # Neue Methoden für die erweiterten Funktionen
+    def open_calendar(self):
+        """Öffnet den Kalender zur Terminverwaltung"""
+        KalenderVerwaltung(self.root, self.conn)
+    
+    def open_reports(self):
+        """Öffnet das erweiterte Berichtswesen"""
+        ErweitertesBerichtswesen(self.root, self.conn)

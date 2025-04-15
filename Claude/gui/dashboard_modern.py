@@ -118,8 +118,8 @@ def create_dashboard_tab(notebook, app):
     lagerwert_card = create_card(left_column, "Aktueller Lagerwert", "-", "Gesamtwert aller Ersatzteile")
     lagerwert_card.pack(fill="x", pady=(0, 10))
     
-    # Karte: To-Do Liste (NEU)
-    todo_card = create_todo_card(left_column)
+    # Karte: To-Do Liste
+    todo_card, todo_listbox, todo_entry = create_todo_card(left_column, app)
     todo_card.pack(fill="x", expand=True)
     
     # Rechte Spalte - Diagramm und Schnellzugriff
@@ -195,6 +195,8 @@ def create_dashboard_tab(notebook, app):
         'lagerwert_label': get_content_label(lagerwert_card),
         'todo_listbox': get_todo_listbox(todo_card),
         'todo_entry': get_todo_entry(todo_card),
+        'todo_listbox': todo_listbox,
+        'todo_entry': todo_entry,
         'fig': fig,
         'ax': ax,
         'canvas': canvas
@@ -213,8 +215,8 @@ def create_card(parent, title, value, description):
     
     return card
 
-def create_todo_card(parent):
-    """Erstellt eine To-Do-Liste Karte"""
+def create_todo_card(parent, app):
+    """Erstellt eine To-Do-Liste Karte mit Datenbankanbindung"""
     card = ttk.Frame(parent, style="Card.TFrame")
     
     ttk.Label(card, text="To-Do Liste", style="CardTitle.TLabel").pack(anchor="w", padx=15, pady=(15, 5))
@@ -230,11 +232,8 @@ def create_todo_card(parent):
                              highlightthickness=0, activestyle="none")
     todo_listbox.pack(side="left", fill="both", expand=True)
     
-    # Beispiel-To-Dos
-    todo_listbox.insert(tk.END, "Ölfilter für Werkstatt bestellen")
-    todo_listbox.insert(tk.END, "Herrn Müller wegen Bremsen anrufen")
-    todo_listbox.insert(tk.END, "Rechnung #RE-2023-045 verschicken")
-    todo_listbox.insert(tk.END, "Serviceplan für BMW aktualisieren")
+    # Beispiel-To-Dos aus der Datenbank laden
+    load_todos(app, todo_listbox)
     
     # Scrollbar mit angepassten Farben
     scrollbar = tk.Scrollbar(todo_frame, orient="vertical", command=todo_listbox.yview)
@@ -255,12 +254,26 @@ def create_todo_card(parent):
     def add_todo():
         todo_text = todo_entry.get().strip()
         if todo_text:
+            # In Datenbank speichern
+            cursor = app.conn.cursor()
+            cursor.execute("INSERT INTO todos (text) VALUES (?)", (todo_text,))
+            app.conn.commit()
+            
+            # In Listbox anzeigen
             todo_listbox.insert(tk.END, todo_text)
             todo_entry.delete(0, tk.END)
     
     def remove_selected_todo():
         selected = todo_listbox.curselection()
         if selected:
+            todo_text = todo_listbox.get(selected[0])
+            
+            # Aus Datenbank löschen
+            cursor = app.conn.cursor()
+            cursor.execute("DELETE FROM todos WHERE text = ?", (todo_text,))
+            app.conn.commit()
+            
+            # Aus Listbox entfernen
             todo_listbox.delete(selected)
     
     # Enter-Taste zum Hinzufügen
@@ -277,7 +290,19 @@ def create_todo_card(parent):
                        font=("Arial", 10, "bold"), width=3, relief="flat", cursor="hand2")
     add_btn.pack(side="left", ipady=3)
     
-    return card
+    return card, todo_listbox, todo_entry
+
+def load_todos(app, todo_listbox):
+    """Lädt ToDos aus der Datenbank"""
+    cursor = app.conn.cursor()
+    cursor.execute("SELECT text FROM todos WHERE erledigt = 0 ORDER BY erstellt_am DESC")
+    
+    # Listbox leeren
+    todo_listbox.delete(0, tk.END)
+    
+    # Todos einfügen
+    for row in cursor.fetchall():
+        todo_listbox.insert(tk.END, row[0])
 
 def get_content_label(card):
     """Hilfsfunktion zum Abrufen des Wert-Labels aus einer Karte"""

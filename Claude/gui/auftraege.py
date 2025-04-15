@@ -106,7 +106,7 @@ def create_auftraege_tab(notebook, app):
     
     ttk.Button(actions_frame, text="Bearbeiten", command=lambda: edit_auftrag(app)).pack(side="left", padx=3)
     ttk.Button(actions_frame, text="Teile hinzufügen", command=lambda: add_parts_to_auftrag(app)).pack(side="left", padx=3)
-    ttk.Button(actions_frame, text="Status ändern", command=lambda: change_auftrag_status(app)).pack(side="left", padx=3)
+    ttk.Button(actions_frame, text="Status weiterschalten", command=lambda: change_auftrag_status(app)).pack(side="left", padx=3)
     ttk.Button(actions_frame, text="Rechnung erstellen", command=lambda: create_invoice_for_auftrag(app)).pack(side="left", padx=3)
     
     # Kunde und Fahrzeug
@@ -238,11 +238,11 @@ def load_auftraege_data(app):
         app.auftraege_widgets['auftraege_tree'].insert('', 'end', values=row, tags=(tag,))
         
     # Tags für verschiedene Status definieren
-    app.auftraege_widgets['auftraege_tree'].tag_configure('offen', background='#FFE0E0')  # Leicht rot
-    app.auftraege_widgets['auftraege_tree'].tag_configure('in_bearbeitung', background='#FFFFD0')  # Leicht gelb
-    app.auftraege_widgets['auftraege_tree'].tag_configure('warten_auf_teile', background='#E0E0FF')  # Leicht blau
-    app.auftraege_widgets['auftraege_tree'].tag_configure('abgeschlossen', background='#E0FFE0')  # Leicht grün
-        
+    app.auftraege_widgets['auftraege_tree'].tag_configure('offen', background='#FFE0E0', foreground='#000000')  # Leicht rot mit schwarzer Schrift
+    app.auftraege_widgets['auftraege_tree'].tag_configure('in_bearbeitung', background='#FFFFD0', foreground='#000000')  # Leicht gelb mit schwarzer Schrift
+    app.auftraege_widgets['auftraege_tree'].tag_configure('warten_auf_teile', background='#E0E0FF', foreground='#000000')  # Leicht blau mit schwarzer Schrift
+    app.auftraege_widgets['auftraege_tree'].tag_configure('abgeschlossen', background='#E0FFE0', foreground='#000000')  # Leicht grün mit schwarzer Schrift
+            
     app.update_status(f"{app.auftraege_widgets['auftraege_tree'].get_children().__len__()} Aufträge geladen")
     
     # Detailansicht zurücksetzen
@@ -521,56 +521,57 @@ def add_parts_to_auftrag(app):
         app.update_status("Teile zum Auftrag hinzugefügt")
 
 def change_auftrag_status(app):
-    """Ändert den Status eines Auftrags"""
+    """Ändert den Status eines Auftrags auf die nächste Stufe"""
     auftrag_id = get_selected_auftrag_id(app)
     if not auftrag_id:
         messagebox.showinfo("Information", "Bitte wählen Sie einen Auftrag aus.")
         return
         
-    # Aktuellen Status abrufen
     cursor = app.conn.cursor()
     cursor.execute("SELECT status FROM auftraege WHERE id = ?", (auftrag_id,))
     aktueller_status = cursor.fetchone()[0]
     
-    # Statusauswahl
-    status_options = ["Offen", "In Bearbeitung", "Warten auf Teile", "Abgeschlossen"]
-    new_status = simpledialog.askstring(
-        "Status ändern",
-        "Neuer Status:",
-        initialvalue=aktueller_status,
-        parent=app.root
-    )
+    # Status-Sequenz definieren
+    status_sequence = ["Offen", "In Bearbeitung", "Warten auf Teile", "Abgeschlossen"]
     
-    if new_status and new_status in status_options:
-        try:
-            # Bei Abschluss das Abschlussdatum setzen
-            if new_status == "Abgeschlossen":
-                cursor.execute(
-                    "UPDATE auftraege SET status = ?, abgeschlossen_am = datetime('now') WHERE id = ?",
-                    (new_status, auftrag_id)
-                )
-            else:
-                cursor.execute(
-                    "UPDATE auftraege SET status = ? WHERE id = ?",
-                    (new_status, auftrag_id)
-                )
-                
-            app.conn.commit()
-            app.load_auftraege()
+    # Nächsten Status ermitteln
+    try:
+        current_index = status_sequence.index(aktueller_status)
+        next_index = (current_index + 1) % len(status_sequence)
+        next_status = status_sequence[next_index]
+    except ValueError:
+        # Falls aktueller Status nicht in der Sequenz ist
+        next_status = status_sequence[0]
+    
+    try:
+        # Bei Abschluss das Abschlussdatum setzen
+        if next_status == "Abgeschlossen":
+            cursor.execute(
+                "UPDATE auftraege SET status = ?, abgeschlossen_am = datetime('now') WHERE id = ?",
+                (next_status, auftrag_id)
+            )
+        else:
+            cursor.execute(
+                "UPDATE auftraege SET status = ? WHERE id = ?",
+                (next_status, auftrag_id)
+            )
             
-            # Auftrag wieder anzeigen nach dem Speichern
-            for item in app.auftraege_widgets['auftraege_tree'].get_children():
-                if app.auftraege_widgets['auftraege_tree'].item(item)['values'][0] == auftrag_id:
-                    app.auftraege_widgets['auftraege_tree'].selection_set(item)
-                    app.auftraege_widgets['auftraege_tree'].focus(item)
-                    app.auftraege_widgets['auftraege_tree'].see(item)
-                    show_auftrag_details(app)
-                    break
-                    
-            app.update_status(f"Auftragsstatus auf '{new_status}' geändert")
-        except sqlite3.Error as e:
-            messagebox.showerror("Fehler", f"Fehler beim Ändern des Status: {e}")
-            app.conn.rollback()
+        app.conn.commit()
+        app.load_auftraege()
+        
+        # Auftrag wieder anzeigen nach dem Speichern
+        for item in app.auftraege_widgets['auftraege_tree'].get_children():
+            if app.auftraege_widgets['auftraege_tree'].item(item)['values'][0] == auftrag_id:
+                app.auftraege_widgets['auftraege_tree'].selection_set(item)
+                app.auftraege_widgets['auftraege_tree'].focus(item)
+                app.auftraege_widgets['auftraege_tree'].see(item)
+                show_auftrag_details(app)
+                break
+                
+        app.update_status(f"Auftragsstatus auf '{next_status}' geändert")
+    except sqlite3.Error as e:
+        messagebox.showerror("Fehler", f"Fehler beim Ändern des Status: {e}")
+        app.conn.rollback()
 
 def create_invoice_for_auftrag(app):
     """Erstellt eine Rechnung für den ausgewählten Auftrag"""

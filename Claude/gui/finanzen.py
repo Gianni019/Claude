@@ -41,6 +41,7 @@ def create_finanzen_tab(notebook, app):
     kennzahlen = [
         ("Gesamtumsatz:", "finanzen_umsatz"),
         ("Materialkosten:", "finanzen_materialkosten"),
+        ("Offene Rechnungen:", "offene_rechnungen"),
         ("Sonstige Ausgaben:", "finanzen_sonstige_ausgaben"),
         ("Gewinn/Verlust:", "finanzen_gewinn"),
         ("Offene Forderungen:", "finanzen_forderungen"),
@@ -197,7 +198,19 @@ def create_finanzen_tab(notebook, app):
     bericht_text = tk.Text(berichte_frame, height=20, width=80)
     bericht_text.pack(fill="both", expand=True, padx=10, pady=10)
 
-    # Widget-Dictionary erstellen
+    # Zusammenfassungs-Frame
+    summary_frame = ttk.LabelFrame(finanzen_frame, text="Zusammenfassung")
+    summary_frame.pack(fill="x", padx=10, pady=10)
+
+    # Spalte für Summenberechnung
+    sum_col1 = ttk.Frame(summary_frame)
+    sum_col1.pack(side="left", fill="x", expand=True, padx=20, pady=5)
+
+    # Offene Rechnungen
+    offene_rechnungen_label = ttk.Label(sum_col1, text="-")
+    offene_rechnungen_label.pack(side="right", padx=5, pady=2)
+    ttk.Label(sum_col1, text="Offene Rechnungen:").pack(side="left", padx=5, pady=2)
+
     widgets = {
         'finanzen_zeitraum_var': finanzen_zeitraum_var,
         'einnahmen_zeitraum_var': einnahmen_zeitraum_var,
@@ -211,7 +224,8 @@ def create_finanzen_tab(notebook, app):
         'ausgaben_tree': ausgaben_tree,
         'finanzen_fig': finanzen_fig,
         'finanzen_ax': finanzen_ax,
-        'finanzen_canvas': finanzen_canvas
+        'finanzen_canvas': finanzen_canvas,
+        'offene_rechnungen_label': offene_rechnungen_label,
     }
     
     # Kennzahlen-Labels hinzufügen
@@ -224,43 +238,48 @@ def update_finanzen_data(app, event=None):
     cursor = app.conn.cursor()
     
     # Zeitraum für Abfragen bestimmen
-    zeitraum_filter = ""
+    zeitraum_bedingung = ""
+    zeitraum_params = []
+    
     if app.finanzen_widgets['finanzen_zeitraum_var'].get() == "Dieser Monat":
-        zeitraum_filter = "WHERE strftime('%Y-%m', datum) = strftime('%Y-%m', 'now')"
+        zeitraum_bedingung = "strftime('%Y-%m', datum) = strftime('%Y-%m', 'now')"
     elif app.finanzen_widgets['finanzen_zeitraum_var'].get() == "Letzter Monat":
-        zeitraum_filter = "WHERE strftime('%Y-%m', datum) = strftime('%Y-%m', 'now', '-1 month')"
+        zeitraum_bedingung = "strftime('%Y-%m', datum) = strftime('%Y-%m', 'now', '-1 month')"
     elif app.finanzen_widgets['finanzen_zeitraum_var'].get() == "Dieses Jahr":
-        zeitraum_filter = "WHERE strftime('%Y', datum) = strftime('%Y', 'now')"
+        zeitraum_bedingung = "strftime('%Y', datum) = strftime('%Y', 'now')"
     elif app.finanzen_widgets['finanzen_zeitraum_var'].get() == "Letztes Jahr":
-        zeitraum_filter = "WHERE strftime('%Y', datum) = strftime('%Y', 'now', '-1 year')"
+        zeitraum_bedingung = "strftime('%Y', datum) = strftime('%Y', 'now', '-1 year')"
     
     # Gesamtumsatz
-    cursor.execute(f"""
+    umsatz_query = f"""
     SELECT COALESCE(SUM(gesamtbetrag), 0)
     FROM rechnungen
-    {zeitraum_filter}
-    """)
+    WHERE bezahlt = 1 {('AND ' + zeitraum_bedingung) if zeitraum_bedingung else ''}
+    """
+    cursor.execute(umsatz_query)
     umsatz = cursor.fetchone()[0]
     app.finanzen_widgets['finanzen_umsatz'].config(text=f"{umsatz:.2f} CHF")
     
     # Materialkosten (aus verwendeten Teilen in abgeschlossenen Aufträgen)
-    cursor.execute(f"""
+    materialkosten_query = f"""
     SELECT COALESCE(SUM(ae.menge * e.einkaufspreis), 0)
     FROM auftrag_ersatzteile ae
     JOIN ersatzteile e ON ae.ersatzteil_id = e.id
     JOIN auftraege a ON ae.auftrag_id = a.id
     JOIN rechnungen r ON a.id = r.auftrag_id
-    {zeitraum_filter.replace('datum', 'r.datum')}
-    """)
+    {('WHERE ' + zeitraum_bedingung.replace('datum', 'r.datum')) if zeitraum_bedingung else ''}
+    """
+    cursor.execute(materialkosten_query)
     materialkosten = cursor.fetchone()[0]
     app.finanzen_widgets['finanzen_materialkosten'].config(text=f"{materialkosten:.2f} CHF")
     
     # Sonstige Ausgaben
-    cursor.execute(f"""
+    ausgaben_query = f"""
     SELECT COALESCE(SUM(betrag), 0)
     FROM ausgaben
-    {zeitraum_filter}
-    """)
+    {('WHERE ' + zeitraum_bedingung) if zeitraum_bedingung else ''}
+    """
+    cursor.execute(ausgaben_query)
     sonstige_ausgaben = cursor.fetchone()[0]
     app.finanzen_widgets['finanzen_sonstige_ausgaben'].config(text=f"{sonstige_ausgaben:.2f} CHF")
     
@@ -268,14 +287,14 @@ def update_finanzen_data(app, event=None):
     gewinn = umsatz - materialkosten - sonstige_ausgaben
     app.finanzen_widgets['finanzen_gewinn'].config(text=f"{gewinn:.2f} CHF")
     
-    # Offene Forderungen
+    # Offene Rechnungen
     cursor.execute("""
     SELECT COALESCE(SUM(gesamtbetrag), 0)
     FROM rechnungen
     WHERE bezahlt = 0
     """)
-    forderungen = cursor.fetchone()[0]
-    app.finanzen_widgets['finanzen_forderungen'].config(text=f"{forderungen:.2f} CHF")
+    offene_rechnungen = cursor.fetchone()[0]
+    app.finanzen_widgets['offene_rechnungen_label'].config(text=f"{offene_rechnungen:.2f} CHF")
     
     # Lagerwert berechnen
     cursor.execute("""
@@ -285,18 +304,27 @@ def update_finanzen_data(app, event=None):
     lagerwert = cursor.fetchone()[0]
     app.finanzen_widgets['finanzen_lagerwert'].config(text=f"{lagerwert:.2f} CHF")
     
+    # Offene Forderungen
+    cursor.execute("""
+    SELECT COALESCE(SUM(gesamtbetrag), 0)
+    FROM rechnungen
+    WHERE bezahlt = 0
+    """)
+    forderungen = cursor.fetchone()[0]
+    
     # Liquidität (fiktiv)
     liquidität = 5000 + gewinn - forderungen  # Annahme: Startkapital von 5000CHF
     app.finanzen_widgets['finanzen_liquidität'].config(text=f"{liquidität:.2f} CHF")
     
     # Einnahmen und Ausgaben für das Diagramm
-    cursor.execute(f"""
+    einnahmen_query = """
     SELECT strftime('%m/%Y', datum) as monat, SUM(gesamtbetrag) as umsatz
     FROM rechnungen
-    WHERE datum >= date('now', '-6 months')
+    WHERE bezahlt = 1 AND datum >= date('now', '-6 months')
     GROUP BY strftime('%Y-%m', datum)
     ORDER BY strftime('%Y-%m', datum)
-    """)
+    """
+    cursor.execute(einnahmen_query)
     
     monate = []
     umsaetze = []
@@ -305,13 +333,14 @@ def update_finanzen_data(app, event=None):
         monate.append(row[0])
         umsaetze.append(row[1])
         
-    cursor.execute("""
+    ausgaben_query = """
     SELECT strftime('%m/%Y', datum) as monat, SUM(betrag) as ausgaben
     FROM ausgaben
     WHERE datum >= date('now', '-6 months')
     GROUP BY strftime('%Y-%m', datum)
     ORDER BY strftime('%Y-%m', datum)
-    """)
+    """
+    cursor.execute(ausgaben_query)
     
     ausgaben_monate = []
     ausgaben_werte = []

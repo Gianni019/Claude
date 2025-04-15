@@ -33,6 +33,12 @@ def update_database_schema(conn):
         
     if current_version < 5:
         update_to_version_5(conn)
+        
+    if current_version < 6:  # NEU
+        update_to_version_6(conn)
+
+    if current_version < 7:
+        update_to_version_7(conn)
     
     # Standardkonfiguration initialisieren
     init_default_config(conn)
@@ -158,3 +164,54 @@ def update_to_version_5(conn):
     
     conn.commit()
     print("Datenbankschema auf Version 5 aktualisiert.")
+
+def update_to_version_6(conn):
+    """Aktualisiert die Datenbank auf Version 6 (Termine)"""
+    print("Aktualisiere Datenbankschema auf Version 6...")
+    cursor = conn.cursor()
+    
+    # Termine-Tabelle hinzufügen
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS termine (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        titel TEXT NOT NULL,
+        beschreibung TEXT,
+        datum DATE NOT NULL,
+        uhrzeit_von TIME,
+        uhrzeit_bis TIME,
+        kunde_id INTEGER,
+        auftrag_id INTEGER,
+        status TEXT DEFAULT 'Geplant',
+        farbe TEXT DEFAULT '#5ce0d8',
+        erstellt_am TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (kunde_id) REFERENCES kunden (id),
+        FOREIGN KEY (auftrag_id) REFERENCES auftraege (id)
+    )
+    """)
+    
+    # Schemaversion aktualisieren
+    cursor.execute("PRAGMA user_version = 6")
+    
+    conn.commit()
+    print("Datenbankschema auf Version 6 aktualisiert.")
+
+def update_to_version_7(conn):
+    """Aktualisiert die Datenbank auf Version 7 (TODO-Liste)"""
+    print("Aktualisiere Datenbankschema auf Version 7...")
+    cursor = conn.cursor()
+    
+    # TODO-Liste Tabelle hinzufügen
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS todos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        text TEXT NOT NULL,
+        erledigt INTEGER DEFAULT 0,
+        erstellt_am TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    
+    # Schemaversion aktualisieren
+    cursor.execute("PRAGMA user_version = 7")
+    
+    conn.commit()
+    print("Datenbankschema auf Version 7 aktualisiert.")
