@@ -578,7 +578,7 @@ class RechnungsDialog:
             
         # Summen aktualisieren
         self.update_summen()
-
+    
     def renumber_positions(self):
         """Nummeriert die Positionen neu durch"""
         items = self.positionen_tree.get_children()

@@ -2,99 +2,194 @@
 # -*- coding: utf-8 -*-
 
 """
-Hauptfenster der Autowerkstatt-Anwendung
+Modernisiertes Hauptfenster der Autowerkstatt-Anwendung
 """
 
 import os
 import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import datetime
+import sv_ttk  # Optional: Für ein moderneres Erscheinungsbild
 
 from db.database import create_database, backup_database
 from dialogs.common_dialogs import HilfeDialog, ExportDialog
-from gui.dashboard import create_dashboard_tab
+from gui.dashboard_modern import create_dashboard_tab  # Verwenden Sie das modernisierte Dashboard
 from gui.kunden import create_kunden_tab
 from gui.auftraege import create_auftraege_tab
 from gui.ersatzteile import create_ersatzteile_tab
 from gui.rechnungen import create_rechnungen_tab
 from gui.finanzen import create_finanzen_tab
 
-class AutowerkstattApp:
+# Moderne Farbpalette
+COLORS = {
+    "bg_dark": "#1e2330",
+    "bg_medium": "#2a3142",
+    "bg_light": "#353e54",
+    "accent": "#5ce0d8",
+    "text_light": "#ffffff",
+    "text_dark": "#aab0bc",
+    "success": "#5fb878",
+    "warning": "#f2aa4c",
+    "danger": "#f65e5e"
+}
+
+class ModernAutowerkstattApp:
     def __init__(self, root):
         self.root = root
         self.root.title("AutoMeister - Werkstattverwaltung")
-        self.root.state('zoomed')  # Vollbildmodus
         
+        # Vollbildmodus und Mindestgröße festlegen
+        self.root.state('zoomed')
+        self.root.minsize(1200, 700)  # Minimale Fenstergröße
+        
+        # Dunkles Design aktivieren, wenn sv_ttk installiert ist
+        try:
+            sv_ttk.set_theme("dark")
+        except NameError:
+            # Wenn sv_ttk nicht installiert ist, eigene Dark-Theme-Konfiguration
+            self.configure_dark_theme()
+            
         # Datenbankinitialisierung
         self.conn = create_database()
         
-        # Hauptmenü erstellen
-        self.create_menu()
+        # Frame für die Navigationsleiste
+        self.nav_frame = tk.Frame(root, bg=COLORS["bg_dark"], width=200)
+        self.nav_frame.pack(side="left", fill="y")
+        self.nav_frame.pack_propagate(0)  # Verhindert, dass der Frame sich an Inhalte anpasst
         
-        # Hauptansicht erstellen
-        self.notebook = ttk.Notebook(root)
+        # App-Logo und -Titel
+        logo_frame = tk.Frame(self.nav_frame, bg=COLORS["bg_dark"], height=80)
+        logo_frame.pack(fill="x", pady=10)
+        
+        app_title = tk.Label(logo_frame, text="AutoMeister", 
+                            bg=COLORS["bg_dark"], fg=COLORS["accent"],
+                            font=("Arial", 18, "bold"))
+        app_title.pack(pady=10)
+        
+        subtitle = tk.Label(logo_frame, text="Werkstattverwaltung", 
+                          bg=COLORS["bg_dark"], fg=COLORS["text_light"],
+                          font=("Arial", 10))
+        subtitle.pack()
+        
+        # Navigationsmenü erstellen
+        self.create_nav_menu()
+        
+        # Hauptcontainer für Tabs
+        main_container = tk.Frame(root, bg=COLORS["bg_medium"])
+        main_container.pack(side="right", fill="both", expand=True)
+        
+        # Notebook für Tabs
+        self.notebook = ttk.Notebook(main_container)
         self.notebook.pack(fill='both', expand=True, padx=10, pady=10)
         
         # Tabs erstellen
         self.create_tabs()
         
         # Statusleiste
-        self.status_bar = tk.Label(root, text="Bereit", bd=1, relief=tk.SUNKEN, anchor=tk.W)
+        self.status_bar = tk.Label(root, text="Bereit", bd=1, relief=tk.SUNKEN, anchor=tk.W,
+                                bg=COLORS["bg_dark"], fg=COLORS["text_light"])
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
         
         # Initial Daten laden
         self.load_all_data()
-
-    def new_auftrag(self):
-        """Erstellt einen neuen Auftrag"""
-        from dialogs.auftrags_dialog import AuftragsDialog
-        auftragsdialog = AuftragsDialog(self.root, "Neuer Auftrag", None, self.conn)
-        if auftragsdialog.result:
-            self.load_auftraege()
-            self.update_status("Neuer Auftrag angelegt")
-
-    def new_rechnung(self):
-        """Erstellt eine neue Rechnung"""
-        from dialogs.rechnungs_dialog import RechnungsDialog
-        rechnungsdialog = RechnungsDialog(self.root, "Neue Rechnung", None, self.conn)
-        if rechnungsdialog.result:
-            self.load_rechnungen()
-            self.update_status("Neue Rechnung erstellt")
-
-    def new_ersatzteil(self):
-        """Erstellt ein neues Ersatzteil"""
-        from dialogs.ersatzteil_dialog import ErsatzteilDialog
-        ersatzteildialog = ErsatzteilDialog(self.root, "Neuer Artikel", None, self.conn)
-        if ersatzteildialog.result:
-            self.load_ersatzteile()
-            self.load_categories()
-            self.update_status("Neuer Artikel angelegt")
-
-    def create_menu(self):
-        """Hauptmenü erstellen"""
-        menu_bar = tk.Menu(self.root)
         
-        # Datei-Menü
-        file_menu = tk.Menu(menu_bar, tearoff=0)
-        file_menu.add_command(label="Datenbank sichern", command=self.backup_database)
-        file_menu.add_command(label="Exportieren", command=self.export_data)
-        file_menu.add_separator()
-        file_menu.add_command(label="Beenden", command=self.root.quit)
-        menu_bar.add_cascade(label="Datei", menu=file_menu)
+        # Callbacks für Navigation
+        self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_change)
+
+    def configure_dark_theme(self):
+        """Konfiguriert ein dunkles Design für Tkinter"""
+        style = ttk.Style()
         
-        # Bearbeiten-Menü
-        edit_menu = tk.Menu(menu_bar, tearoff=0)
-        edit_menu.add_command(label="Einstellungen", command=self.open_settings)
-        menu_bar.add_cascade(label="Bearbeiten", menu=edit_menu)
+        # Notebook-Design
+        style.configure("TNotebook", background=COLORS["bg_dark"])
+        style.configure("TNotebook.Tab", background=COLORS["bg_medium"], foreground=COLORS["text_light"])
+        style.map("TNotebook.Tab", 
+                 background=[("selected", COLORS["accent"])],
+                 foreground=[("selected", COLORS["bg_dark"])])
         
-        # Hilfe-Menü
-        help_menu = tk.Menu(menu_bar, tearoff=0)
-        help_menu.add_command(label="Hilfe", command=self.show_help)
-        help_menu.add_command(label="Über", command=self.show_about)
-        menu_bar.add_cascade(label="Hilfe", menu=help_menu)
+        # Frame-Design
+        style.configure("TFrame", background=COLORS["bg_medium"])
         
-        self.root.config(menu=menu_bar)
+        # Label-Design
+        style.configure("TLabel", background=COLORS["bg_medium"], foreground=COLORS["text_light"])
+        
+        # Button-Design
+        style.configure("TButton", 
+                      background=COLORS["accent"], 
+                      foreground=COLORS["bg_dark"],
+                      borderwidth=0)
+        style.map("TButton",
+                 background=[("active", COLORS["text_light"])],
+                 foreground=[("active", COLORS["bg_dark"])])
+        
+        # Eingabefelder
+        style.configure("TEntry", 
+                      fieldbackground=COLORS["bg_light"],
+                      foreground=COLORS["text_light"],
+                      borderwidth=0)
+        
+        # Weitere Widget-Stile...
+        style.configure("Treeview", 
+                      background=COLORS["bg_light"], 
+                      fieldbackground=COLORS["bg_light"],
+                      foreground=COLORS["text_light"])
+        style.map("Treeview", 
+                 background=[("selected", COLORS["accent"])],
+                 foreground=[("selected", COLORS["bg_dark"])])
+
+    def create_nav_menu(self):
+        """Erstellt ein vertikales Navigationsmenü"""
+        nav_items = [
+            ("Dashboard", lambda: self.notebook.select(0), "dashboard"),
+            ("Kunden", lambda: self.notebook.select(1), "customers"),
+            ("Aufträge", lambda: self.notebook.select(2), "orders"),
+            ("Ersatzteile", lambda: self.notebook.select(3), "parts"),
+            ("Rechnungen", lambda: self.notebook.select(4), "invoices"),
+            ("Finanzen", lambda: self.notebook.select(5), "finances"),
+            ("Einstellungen", self.open_settings, "settings")
+        ]
+        
+        menu_frame = tk.Frame(self.nav_frame, bg=COLORS["bg_dark"])
+        menu_frame.pack(fill="x", pady=20)
+        
+        self.nav_buttons = []
+        
+        for i, (text, command, icon_name) in enumerate(nav_items):
+            # Frame für jeden Menüpunkt
+            btn_frame = tk.Frame(menu_frame, bg=COLORS["bg_dark"], height=40)
+            btn_frame.pack(fill="x", pady=2)
+            
+            # Hier könnte man Icons hinzufügen, wenn gewünscht
+            # icon = tk.PhotoImage(file=f"icons/{icon_name}.png")
+            # icon_label = tk.Label(btn_frame, image=icon, bg=COLORS["bg_dark"])
+            # icon_label.image = icon
+            # icon_label.pack(side="left", padx=10)
+            
+            # Button mit hover-Effekt
+            btn = tk.Label(btn_frame, text=text, bg=COLORS["bg_dark"], fg=COLORS["text_light"],
+                          font=("Arial", 11), cursor="hand2", pady=8, padx=15)
+            btn.pack(fill="x")
+            
+            # Bind-Events für Hover-Effekt und Klick
+            btn.bind("<Enter>", lambda e, b=btn: b.config(bg=COLORS["bg_light"]))
+            btn.bind("<Leave>", lambda e, b=btn: b.config(bg=COLORS["bg_dark"]))
+            btn.bind("<Button-1>", lambda e, cmd=command: cmd())
+            
+            self.nav_buttons.append((btn, i))  # Button mit Index speichern
     
+    def on_tab_change(self, event):
+        """Aktualisiert die Hervorhebung im Navigationsmenü beim Tab-Wechsel"""
+        selected_tab = self.notebook.index("current")
+        
+        # Alle Buttons zurücksetzen
+        for btn, idx in self.nav_buttons:
+            if idx == selected_tab:
+                btn.config(bg=COLORS["bg_light"], fg=COLORS["accent"], 
+                         font=("Arial", 11, "bold"))
+            else:
+                btn.config(bg=COLORS["bg_dark"], fg=COLORS["text_light"], 
+                         font=("Arial", 11))
+
     def create_tabs(self):
         """Erstellt alle Tabs der Anwendung"""
         # Dashboard-Tab
@@ -168,7 +263,7 @@ class AutowerkstattApp:
         
     def update_dashboard(self):
         """Aktualisiert das Dashboard mit aktuellen Daten"""
-        from gui.dashboard import update_dashboard_data
+        from gui.dashboard_modern import update_dashboard_data
         update_dashboard_data(self)
         
     def update_finanzen(self, event=None):
@@ -227,7 +322,7 @@ Bei Fragen wenden Sie sich an den Support.
 AutoMeister - Werkstattverwaltung
 =================================
 
-Version: 1.0.0
+Version: 2.0.0
 Erstellt: 2025
 
 Eine Anwendung zur einfachen Verwaltung einer Autowerkstatt.
@@ -237,10 +332,7 @@ Entwickelt mit Python und Tkinter.
         
         HilfeDialog(self.root, "Über AutoMeister", about_text)
     
-    # Weitere Methoden, die in den Tabs benötigt werden
-    # Diese fungieren als Schnittstelle zwischen den GUI-Modulen und den Dialog-Modulen
-    
-    # Kunden-Methoden
+    # Aktionen für die Schnellzugriff-Buttons
     def new_kunde(self):
         from dialogs.kunden_dialog import KundenDialog
         kundendialog = KundenDialog(self.root, "Neuer Kunde", None, self.conn)
@@ -261,5 +353,37 @@ Entwickelt mit Python und Tkinter.
         if kundendialog.result:
             self.load_kunden()
             self.update_status("Kundendaten aktualisiert")
+    
+    def new_auftrag(self):
+        """Erstellt einen neuen Auftrag"""
+        from dialogs.auftrags_dialog import AuftragsDialog
+        auftragsdialog = AuftragsDialog(self.root, "Neuer Auftrag", None, self.conn)
+        if auftragsdialog.result:
+            self.load_auftraege()
+            self.update_status("Neuer Auftrag angelegt")
             
-    # ... weitere Methoden für andere Tabs ...
+            # Zum Aufträge-Tab wechseln
+            self.notebook.select(2)  # Index 2 = Aufträge-Tab
+            
+    def new_rechnung(self):
+        """Erstellt eine neue Rechnung"""
+        from dialogs.rechnungs_dialog import RechnungsDialog
+        rechnungsdialog = RechnungsDialog(self.root, "Neue Rechnung", None, self.conn)
+        if rechnungsdialog.result:
+            self.load_rechnungen()
+            self.update_status("Neue Rechnung erstellt")
+            
+            # Zum Rechnungen-Tab wechseln
+            self.notebook.select(4)  # Index 4 = Rechnungen-Tab
+            
+    def new_ersatzteil(self):
+        """Erstellt ein neues Ersatzteil"""
+        from dialogs.ersatzteil_dialog import ErsatzteilDialog
+        ersatzteildialog = ErsatzteilDialog(self.root, "Neuer Artikel", None, self.conn)
+        if ersatzteildialog.result:
+            self.load_ersatzteile()
+            self.load_categories()
+            self.update_status("Neuer Artikel angelegt")
+            
+            # Zum Ersatzteile-Tab wechseln
+            self.notebook.select(3)  # Index 3 = Ersatzteile-Tab

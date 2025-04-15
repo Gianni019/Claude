@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Ersatzteile-Tab für die Autowerkstatt-Anwendung
+Modernisiertes Ersatzteile-Tab für die Autowerkstatt-Anwendung
 """
 
 import tkinter as tk
@@ -13,49 +13,164 @@ from dialogs.ersatzteil_dialog import ErsatzteilDialog
 from dialogs.bestand_dialog import BestandsDialog
 from dialogs.teile_dialog import NachbestellDialog
 
+# Moderne Farbpalette
+COLORS = {
+    "bg_dark": "#1e2330",
+    "bg_medium": "#2a3142",
+    "bg_light": "#353e54",
+    "accent": "#5ce0d8",
+    "text_light": "#ffffff",
+    "text_dark": "#aab0bc",
+    "success": "#5fb878",
+    "warning": "#f2aa4c",
+    "danger": "#f65e5e"
+}
+
 def create_ersatzteile_tab(notebook, app):
-    """Ersatzteile-Tab erstellen"""
+    """Ersatzteile-Tab mit modernem Design erstellen"""
+    # Hauptframe mit dunklem Hintergrund
     ersatzteile_frame = ttk.Frame(notebook)
     
-    # Suchleiste und Filter
-    filter_frame = ttk.Frame(ersatzteile_frame)
-    filter_frame.pack(fill="x", padx=10, pady=10)
+    # Custom Styles für Ersatzteile-Tab
+    style = ttk.Style()
+    style.configure("Card.TFrame", background=COLORS["bg_medium"])
+    style.configure("CardTitle.TLabel", 
+                   background=COLORS["bg_medium"], 
+                   foreground=COLORS["text_light"],
+                   font=("Arial", 12, "bold"))
     
-    ttk.Label(filter_frame, text="Suche:").grid(row=0, column=0, padx=5)
+    # Hauptcontainer
+    main_container = ttk.Frame(ersatzteile_frame, style="Dashboard.TFrame")
+    main_container.pack(fill="both", expand=True, padx=15, pady=15)
+    
+    # Header mit Titel und Suchleiste
+    header_frame = ttk.Frame(main_container, style="Dashboard.TFrame")
+    header_frame.pack(fill="x", pady=(0, 15))
+    
+    # Titel und Filter in separaten Frames
+    title_frame = ttk.Frame(header_frame, style="Dashboard.TFrame")
+    title_frame.pack(side="left", anchor="w")
+    
+    title_label = ttk.Label(title_frame, text="Ersatzteile & Lagerbestand", style="DashboardTitle.TLabel")
+    title_label.pack(side="left", anchor="w")
+    
+    # Filter- und Suchbereich
+    filter_frame = ttk.Frame(header_frame, style="Card.TFrame")
+    filter_frame.pack(side="right", padx=5, pady=5, ipadx=10, ipady=5)
+    
+    # Suchfeld mit modernem Design
+    search_container = ttk.Frame(filter_frame, style="Card.TFrame")
+    search_container.pack(side="left", padx=10)
+    
+    ttk.Label(search_container, text="Suche:", style="CardText.TLabel").pack(side="left", padx=5)
     ersatzteile_search_var = tk.StringVar()
-    search_entry = ttk.Entry(filter_frame, textvariable=ersatzteile_search_var, width=20)
-    search_entry.grid(row=0, column=1, padx=5)
+    
+    # Eigenes Entry-Widget für besseres Design
+    search_entry = tk.Entry(search_container, textvariable=ersatzteile_search_var, width=25,
+                          bg=COLORS["bg_light"], fg=COLORS["text_light"],
+                          insertbackground=COLORS["text_light"],
+                          relief="flat", highlightthickness=1,
+                          highlightbackground=COLORS["bg_light"],
+                          highlightcolor=COLORS["accent"],
+                          font=("Arial", 10))
+    search_entry.pack(side="left", padx=5, ipady=4)
     search_entry.bind("<KeyRelease>", lambda event: search_ersatzteile(app))
     
-    ttk.Label(filter_frame, text="Kategorie:").grid(row=0, column=2, padx=5)
+    # Kategoriefilter
+    category_container = ttk.Frame(filter_frame, style="Card.TFrame")
+    category_container.pack(side="left", padx=10)
+    
+    ttk.Label(category_container, text="Kategorie:", style="CardText.TLabel").pack(side="left", padx=5)
     kategorie_filter_var = tk.StringVar(value="Alle")
-    kategorie_combo = ttk.Combobox(filter_frame, textvariable=kategorie_filter_var, width=15)
-    kategorie_combo.grid(row=0, column=3, padx=5)
+    
+    # Combo-Box-Design
+    kategorie_combo = ttk.Combobox(category_container, textvariable=kategorie_filter_var, width=15,
+                                 values=["Alle"])
+    kategorie_combo.pack(side="left", padx=5)
     kategorie_combo.bind("<<ComboboxSelected>>", lambda event: filter_ersatzteile(app))
     
     # Checkbox für Artikel mit niedrigem Bestand
+    low_stock_container = ttk.Frame(filter_frame, style="Card.TFrame")
+    low_stock_container.pack(side="left", padx=10)
+    
     low_stock_var = tk.BooleanVar()
-    ttk.Checkbutton(filter_frame, text="Nur Artikel mit niedrigem Bestand", variable=low_stock_var, 
-                    command=lambda: filter_ersatzteile(app)).grid(row=0, column=4, padx=5)
     
-    # Buttons
-    btn_frame = ttk.Frame(ersatzteile_frame)
-    btn_frame.pack(fill="x", padx=10, pady=5)
+    # Moderne Checkbox
+    low_stock_check = ttk.Checkbutton(low_stock_container, text="Nur Artikel mit niedrigem Bestand", 
+                                    variable=low_stock_var, style="TCheckbutton",
+                                    command=lambda: filter_ersatzteile(app))
+    low_stock_check.pack(side="left", padx=5)
     
-    ttk.Button(btn_frame, text="Neuer Artikel", command=lambda: new_ersatzteil(app)).pack(side="left", padx=5)
-    ttk.Button(btn_frame, text="Bearbeiten", command=lambda: edit_ersatzteil(app)).pack(side="left", padx=5)
-    ttk.Button(btn_frame, text="Löschen", command=lambda: delete_ersatzteil(app)).pack(side="left", padx=5)
-    ttk.Button(btn_frame, text="Bestand ändern", command=lambda: change_inventory(app)).pack(side="left", padx=5)
-    ttk.Button(btn_frame, text="Nachbestellliste", command=lambda: show_nachbestellliste(app)).pack(side="left", padx=5)
-    ttk.Button(btn_frame, text="Aktualisieren", command=lambda: app.load_ersatzteile()).pack(side="right", padx=5)
+    # Buttons-Bereich
+    content_frame = ttk.Frame(main_container, style="Dashboard.TFrame")
+    content_frame.pack(fill="both", expand=True)
     
-    # Tabelle
-    table_frame = ttk.Frame(ersatzteile_frame)
-    table_frame.pack(fill="both", expand=True, padx=10, pady=10)
+    # Linke Seite - Aktionskarte und Detailkarte
+    left_column = ttk.Frame(content_frame, style="Dashboard.TFrame")
+    left_column.pack(side="left", fill="both", expand=True, padx=(0, 10))
     
-    # Spalten der Treeview aktualisieren
-    columns = ('id', 'artikelnr', 'bezeichnung', 'kategorie', 'lagerbestand', 'mindestbestand', 'einkaufspreis', 'verkaufspreis', 'lagerort', 'einheit')
-    ersatzteile_tree = ttk.Treeview(table_frame, columns=columns, show='headings')
+    # Aktionskarte
+    action_card = ttk.Frame(left_column, style="Card.TFrame")
+    action_card.pack(fill="x", pady=(0, 10), ipadx=10, ipady=10)
+    
+    ttk.Label(action_card, text="Aktionen", style="CardTitle.TLabel").pack(anchor="w", padx=15, pady=(15, 10))
+    
+    # Container für Buttons
+    btn_container = ttk.Frame(action_card, style="Card.TFrame")
+    btn_container.pack(fill="x", padx=15, pady=(0, 15))
+    
+    # Moderne Button-Klasse
+    class ModernButton(tk.Button):
+        def __init__(self, parent, text, command, icon=None, primary=False, **kwargs):
+            bg_color = COLORS["accent"] if primary else COLORS["bg_light"]
+            fg_color = COLORS["bg_dark"] if primary else COLORS["text_light"]
+            
+            super().__init__(parent, text=text, command=command, 
+                            bg=bg_color, fg=fg_color,
+                            activebackground=COLORS["text_light"], 
+                            activeforeground=COLORS["bg_dark"],
+                            relief="flat", borderwidth=0, padx=15, pady=8,
+                            font=("Arial", 10), cursor="hand2", **kwargs)
+    
+    # Buttons für Aktionen
+    btn_neuer_artikel = ModernButton(btn_container, text="Neuer Artikel", 
+                                    command=lambda: new_ersatzteil(app), primary=True)
+    btn_neuer_artikel.pack(side="left", padx=(0, 5))
+    
+    btn_bearbeiten = ModernButton(btn_container, text="Bearbeiten", 
+                                command=lambda: edit_ersatzteil(app))
+    btn_bearbeiten.pack(side="left", padx=5)
+    
+    btn_loeschen = ModernButton(btn_container, text="Löschen", 
+                              command=lambda: delete_ersatzteil(app))
+    btn_loeschen.pack(side="left", padx=5)
+    
+    btn_bestand_aendern = ModernButton(btn_container, text="Bestand ändern", 
+                                     command=lambda: change_inventory(app))
+    btn_bestand_aendern.pack(side="left", padx=5)
+    
+    btn_nachbestellliste = ModernButton(btn_container, text="Nachbestellliste", 
+                                       command=lambda: show_nachbestellliste(app))
+    btn_nachbestellliste.pack(side="left", padx=5)
+    
+    btn_aktualisieren = ModernButton(btn_container, text="Aktualisieren", 
+                                    command=lambda: app.load_ersatzteile())
+    btn_aktualisieren.pack(side="right")
+    
+    # Tabelle mit Ersatzteilen
+    table_card = ttk.Frame(left_column, style="Card.TFrame")
+    table_card.pack(fill="both", expand=True, ipadx=10, ipady=10)
+    
+    ttk.Label(table_card, text="Ersatzteilbestand", style="CardTitle.TLabel").pack(anchor="w", padx=15, pady=(15, 10))
+    
+    # Tabelle für Ersatzteile
+    table_frame = ttk.Frame(table_card, style="Card.TFrame")
+    table_frame.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+    
+    # Spalten der Treeview
+    columns = ('id', 'artikelnr', 'bezeichnung', 'kategorie', 'lagerbestand', 'mindestbestand', 
+              'einkaufspreis', 'verkaufspreis', 'lagerort', 'einheit')
+    ersatzteile_tree = ttk.Treeview(table_frame, columns=columns, show='headings', style="Treeview")
 
     # Spaltenkonfiguration
     ersatzteile_tree.heading('id', text='ID')
@@ -80,7 +195,7 @@ def create_ersatzteile_tab(notebook, app):
     ersatzteile_tree.column('lagerort', width=80)
     ersatzteile_tree.column('einheit', width=60, anchor='center')
         
-    # Scrollbars
+    # Scrollbars mit modernem Aussehen
     vsb = ttk.Scrollbar(table_frame, orient="vertical", command=ersatzteile_tree.yview)
     hsb = ttk.Scrollbar(table_frame, orient="horizontal", command=ersatzteile_tree.xview)
     ersatzteile_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
@@ -89,39 +204,81 @@ def create_ersatzteile_tab(notebook, app):
     hsb.pack(side="bottom", fill="x")
     ersatzteile_tree.pack(fill="both", expand=True)
     
-    # Artikeldetails unten anzeigen
-    details_frame = ttk.LabelFrame(ersatzteile_frame, text="Artikeldetails")
-    details_frame.pack(fill="x", padx=10, pady=10)
+    # Rechte Seite - Detailkarte
+    right_column = ttk.Frame(content_frame, style="Dashboard.TFrame", width=300)
+    right_column.pack(side="right", fill="y", padx=(10, 0))
+    right_column.pack_propagate(False)  # Verhindert, dass der Frame sich an Inhalte anpasst
     
-    # Spalten für Details
-    left_details = ttk.Frame(details_frame)
-    left_details.grid(row=0, column=0, sticky="nw", padx=10, pady=5)
+    # Detailkarte
+    detail_card = ttk.Frame(right_column, style="Card.TFrame")
+    detail_card.pack(fill="both", expand=True, ipadx=10, ipady=10)
     
-    right_details = ttk.Frame(details_frame)
-    right_details.grid(row=0, column=1, sticky="nw", padx=10, pady=5)
+    ttk.Label(detail_card, text="Artikeldetails", style="CardTitle.TLabel").pack(anchor="w", padx=15, pady=(15, 10))
     
-    # Linke Spalte - Artikelinfos
-    ttk.Label(left_details, text="Artikelwert:").grid(row=0, column=0, sticky="w", pady=2)
-    artikel_wert_info = ttk.Label(left_details, text="-")
-    artikel_wert_info.grid(row=0, column=1, sticky="w", pady=2)
+    # Placeholder für "Bitte Artikel auswählen"
+    placeholder_frame = ttk.Frame(detail_card, style="Card.TFrame")
+    placeholder_frame.pack(fill="both", expand=True, padx=15, pady=10)
     
-    ttk.Label(left_details, text="Lieferant:").grid(row=1, column=0, sticky="w", pady=2)
-    artikel_lieferant_info = ttk.Label(left_details, text="-")
-    artikel_lieferant_info.grid(row=1, column=1, sticky="w", pady=2)
+    placeholder_label = ttk.Label(placeholder_frame, text="Bitte wählen Sie einen Artikel aus\nder Tabelle aus, um Details zu sehen.",
+                                style="CardText.TLabel", justify="center")
+    placeholder_label.pack(expand=True)
     
-    ttk.Label(left_details, text="Bestellstatus:").grid(row=2, column=0, sticky="w", pady=2)
-    artikel_status_info = ttk.Label(left_details, text="-")
-    artikel_status_info.grid(row=2, column=1, sticky="w", pady=2)
+    # Details-Frame (wird später angezeigt)
+    details_frame = ttk.Frame(detail_card, style="Card.TFrame")
     
-    # Rechte Spalte - Graphik
-    ttk.Label(right_details, text="Bestandsentwicklung:").grid(row=0, column=0, sticky="w", pady=2)
-    # Hier würde ein Miniaturdiagramm eingebunden werden
+    # Artikelwert
+    wert_frame = ttk.Frame(details_frame, style="Card.TFrame")
+    wert_frame.pack(fill="x", pady=10)
+    
+    ttk.Label(wert_frame, text="Artikelwert:", style="CardText.TLabel").pack(side="left", padx=5)
+    artikel_wert_info = ttk.Label(wert_frame, text="-", style="CardContent.TLabel")
+    artikel_wert_info.pack(side="left", padx=5)
+    
+    # Lieferant
+    lieferant_frame = ttk.Frame(details_frame, style="Card.TFrame")
+    lieferant_frame.pack(fill="x", pady=10)
+    
+    ttk.Label(lieferant_frame, text="Lieferant:", style="CardText.TLabel").pack(side="left", padx=5)
+    artikel_lieferant_info = ttk.Label(lieferant_frame, text="-", style="CardText.TLabel")
+    artikel_lieferant_info.pack(side="left", padx=5)
+    
+    # Bestellstatus
+    status_frame = ttk.Frame(details_frame, style="Card.TFrame")
+    status_frame.pack(fill="x", pady=10)
+    
+    ttk.Label(status_frame, text="Bestellstatus:", style="CardText.TLabel").pack(side="left", padx=5)
+    artikel_status_info = ttk.Label(status_frame, text="-", style="CardText.TLabel")
+    artikel_status_info.pack(side="left", padx=5)
+    
+    # Bestandsentwicklung (Platzhalter für ein Diagramm)
+    chart_frame = ttk.Frame(details_frame, style="Card.TFrame")
+    chart_frame.pack(fill="both", expand=True, pady=10)
+    
+    ttk.Label(chart_frame, text="Bestandsentwicklung:", style="CardText.TLabel").pack(anchor="w", padx=5, pady=5)
+    
+    # Hier könnte in Zukunft eine kleine Bestandsverlaufs-Grafik angezeigt werden
+    chart_placeholder = ttk.Label(chart_frame, text="Bestandsverlauf\n(in Entwicklung)", 
+                               style="CardText.TLabel", justify="center")
+    chart_placeholder.pack(fill="both", expand=True, pady=20)
+    
+    # Event-Handler für Tabellenauswahl
+    def on_tree_select(event):
+        """Zeigt Details zum ausgewählten Artikel und tauscht die Frames"""
+        selected_items = ersatzteile_tree.selection()
+        if selected_items:
+            # Details anzeigen
+            placeholder_frame.pack_forget()
+            details_frame.pack(fill="both", expand=True, padx=15, pady=10)
+            show_ersatzteil_details(app)
+        else:
+            # Placeholder anzeigen
+            details_frame.pack_forget()
+            placeholder_frame.pack(fill="both", expand=True, padx=15, pady=10)
+    
+    ersatzteile_tree.bind("<<TreeviewSelect>>", on_tree_select)
     
     # Doppelklick zum Bearbeiten
     ersatzteile_tree.bind("<Double-1>", lambda event: edit_ersatzteil(app))
-    
-    # Event-Handler für Tabellenauswahl
-    ersatzteile_tree.bind("<<TreeviewSelect>>", lambda event: show_ersatzteil_details(app))
 
     # Widget-Dictionary erstellen
     widgets = {
@@ -132,13 +289,15 @@ def create_ersatzteile_tab(notebook, app):
         'ersatzteile_tree': ersatzteile_tree,
         'artikel_wert_info': artikel_wert_info,
         'artikel_lieferant_info': artikel_lieferant_info,
-        'artikel_status_info': artikel_status_info
+        'artikel_status_info': artikel_status_info,
+        'placeholder_frame': placeholder_frame,
+        'details_frame': details_frame
     }
     
     return ersatzteile_frame, widgets
 
 def load_ersatzteile_data(app):
-    """Lädt Ersatzteildaten aus der Datenbank"""
+    """Lädt Ersatzteildaten aus der Datenbank mit modernem Styling"""
     cursor = app.conn.cursor()
     cursor.execute("""
     SELECT id, artikelnummer, bezeichnung, kategorie, lagerbestand, mindestbestand,
@@ -160,10 +319,15 @@ def load_ersatzteile_data(app):
         else:
             app.ersatzteile_widgets['ersatzteile_tree'].insert('', 'end', values=row)
             
-    # Tag für niedrigen Bestand erstellen
-    app.ersatzteile_widgets['ersatzteile_tree'].tag_configure('low_stock', background='lightsalmon')
+    # Tag für niedrigen Bestand erstellen mit modernerer Farbe
+    app.ersatzteile_widgets['ersatzteile_tree'].tag_configure('low_stock', background=COLORS["warning"], foreground=COLORS["bg_dark"])
         
     app.update_status(f"{app.ersatzteile_widgets['ersatzteile_tree'].get_children().__len__()} Artikel geladen")
+    
+    # Details zurücksetzen - Zeige Platzhalter
+    if 'placeholder_frame' in app.ersatzteile_widgets and 'details_frame' in app.ersatzteile_widgets:
+        app.ersatzteile_widgets['details_frame'].pack_forget()
+        app.ersatzteile_widgets['placeholder_frame'].pack(fill="both", expand=True, padx=15, pady=10)
 
 def search_ersatzteile(app):
     """Durchsucht die Ersatzteilliste nach dem Suchbegriff"""
@@ -189,8 +353,8 @@ def search_ersatzteile(app):
                 app.ersatzteile_widgets['ersatzteile_tree'].item(item, tags=('',))
             
     if search_term:
-        # Hervorheben der Treffer
-        app.ersatzteile_widgets['ersatzteile_tree'].tag_configure('match', background='lightyellow')
+        # Hervorheben der Treffer mit modernerer Farbe
+        app.ersatzteile_widgets['ersatzteile_tree'].tag_configure('match', background=COLORS["accent"], foreground=COLORS["bg_dark"])
     else:
         # Filter anwenden, wenn Suchfeld leer
         filter_ersatzteile(app)
@@ -215,7 +379,7 @@ def filter_ersatzteile(app):
     query = f"""
     SELECT id, artikelnummer, bezeichnung, kategorie, lagerbestand, mindestbestand,
            printf("%.2f", einkaufspreis) as einkaufspreis, 
-           printf("%.2f", verkaufspreis) as verkaufspreis, lagerort
+           printf("%.2f", verkaufspreis) as verkaufspreis, lagerort, einheit
     FROM ersatzteile
     {where_clause}
     ORDER BY bezeichnung
@@ -267,12 +431,18 @@ def show_ersatzteil_details(app, event=None):
     except ValueError:
         app.ersatzteile_widgets['artikel_wert_info'].config(text="0.00 CHF")
     
-    # Bestellstatus setzen
+    # Bestellstatus setzen mit modernen Farben
     mindestbestand = app.ersatzteile_widgets['ersatzteile_tree'].item(app.ersatzteile_widgets['ersatzteile_tree'].selection()[0])['values'][5]
     if bestand <= mindestbestand:
-        app.ersatzteile_widgets['artikel_status_info'].config(text="Nachbestellung erforderlich", foreground="red")
+        app.ersatzteile_widgets['artikel_status_info'].config(
+            text="Nachbestellung erforderlich", 
+            foreground=COLORS["danger"]
+        )
     else:
-        app.ersatzteile_widgets['artikel_status_info'].config(text="Ausreichend auf Lager", foreground="green")
+        app.ersatzteile_widgets['artikel_status_info'].config(
+            text="Ausreichend auf Lager", 
+            foreground=COLORS["success"]
+        )
 
 def new_ersatzteil(app):
     """Erstellt ein neues Ersatzteil"""
@@ -314,8 +484,14 @@ def delete_ersatzteil(app):
         messagebox.showwarning("Warnung", f"Der Artikel '{bezeichnung}' wird in {used_count} Aufträgen verwendet. Löschen nicht möglich.")
         return
         
-    # Bestätigung einholen
-    if messagebox.askyesno("Löschen bestätigen", f"Möchten Sie den Artikel '{bezeichnung}' wirklich löschen?"):
+    # Bestätigung einholen mit modernem Design
+    confirmation = messagebox.askyesno(
+        "Löschen bestätigen", 
+        f"Möchten Sie den Artikel '{bezeichnung}' wirklich löschen?",
+        icon="warning"
+    )
+    
+    if confirmation:
         try:
             cursor.execute("DELETE FROM ersatzteile WHERE id = ?", (ersatzteil_id,))
             app.conn.commit()
