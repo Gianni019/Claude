@@ -287,14 +287,21 @@ def update_finanzen_data(app, event=None):
     gewinn = umsatz - materialkosten - sonstige_ausgaben
     app.finanzen_widgets['finanzen_gewinn'].config(text=f"{gewinn:.2f} CHF")
     
-    # Offene Rechnungen
+    # Offene Rechnungen - KORREKTUR: Summe der offenen Rechnungen anzeigen
     cursor.execute("""
     SELECT COALESCE(SUM(gesamtbetrag), 0)
     FROM rechnungen
     WHERE bezahlt = 0
     """)
     offene_rechnungen = cursor.fetchone()[0]
-    app.finanzen_widgets['offene_rechnungen_label'].config(text=f"{offene_rechnungen:.2f} CHF")
+    
+    # Lade den entsprechenden Widget-Namen aus dem Dictionary
+    if 'offene_rechnungen' in app.finanzen_widgets:
+        app.finanzen_widgets['offene_rechnungen'].config(text=f"{offene_rechnungen:.2f} CHF")
+    
+    # Aktualisiere auch das zweite Widget für offene Rechnungen auf der Zusammenfassungsseite
+    if 'offene_rechnungen_label' in app.finanzen_widgets:
+        app.finanzen_widgets['offene_rechnungen_label'].config(text=f"{offene_rechnungen:.2f} CHF")
     
     # Lagerwert berechnen
     cursor.execute("""
@@ -311,6 +318,7 @@ def update_finanzen_data(app, event=None):
     WHERE bezahlt = 0
     """)
     forderungen = cursor.fetchone()[0]
+    app.finanzen_widgets['finanzen_forderungen'].config(text=f"{forderungen:.2f} CHF")
     
     # Liquidität (fiktiv)
     liquidität = 5000 + gewinn - forderungen  # Annahme: Startkapital von 5000CHF

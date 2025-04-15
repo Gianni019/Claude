@@ -397,8 +397,9 @@ def update_dashboard_data(app):
                 
                 # Text-Werte über den Balken
                 for i, v in enumerate(umsaetze):
-                    ax.text(i, v + max(umsaetze) * 0.03, f"{v:.0f} CHF", 
-                            ha='center', color=COLORS["text_light"], fontsize=8)
+                    if v > 0:  # Nur wenn Umsatz vorhanden ist
+                        ax.text(i, v + max(umsaetze) * 0.03, f"{v:.0f} CHF", 
+                                ha='center', color=COLORS["text_light"], fontsize=8)
             
             # Diagramm-Einstellungen
             ax.set_ylabel('Umsatz (CHF)', color=COLORS["text_light"])
@@ -414,13 +415,134 @@ def update_dashboard_data(app):
         except Exception as e:
             logging.error(f"Fehler bei Umsatzdiagramm-Erstellung: {e}")
         
+        # Laden und Aktualisieren der TODO-Liste
+        try:
+            if 'todo_listbox' in app.dashboard_widgets:
+                cursor.execute("SELECT text FROM todos WHERE erledigt = 0 ORDER BY erstellt_am DESC")
+                
+                # Listbox leeren
+                app.dashboard_widgets['todo_listbox'].delete(0, tk.END)
+                
+                # Todos einfügen
+                for row in cursor.fetchall():
+                    app.dashboard_widgets['todo_listbox'].insert(tk.END, row[0])
+        except Exception as e:
+            logging.error(f"Fehler beim Laden der Todo-Liste: {e}")
+        
+        # Bestandsentwicklung für Diagramm (zukünftige Implementierung)
+        # Dies ist ein Platzhalter für eine zukünftige Funktion
+        # In einem echten System würde hier der Bestandsverlauf von Teilen über die Zeit analysiert
+        # und als Diagramm dargestellt werden
+        
     except Exception as e:
         logging.error(f"Unerwarteter Fehler im Dashboard-Update: {e}")
 
-def show_nachbestellliste(app):
-    """Zeigt die Nachbestellliste an"""
-    try:
-        NachbestellDialog(app.root, "Nachbestellliste", app.conn)
-    except Exception as e:
-        logging.error(f"Fehler beim Öffnen der Nachbestellliste: {e}")
-        messagebox.showerror("Fehler", f"Konnte Nachbestellliste nicht öffnen: {e}")
+
+def create_todo_card(parent, app):
+    """Erstellt eine To-Do-Liste Karte mit Datenbankanbindung"""
+    card = ttk.Frame(parent, style="Card.TFrame")
+    
+    ttk.Label(card, text="To-Do Liste", style="CardTitle.TLabel").pack(anchor="w", padx=15, pady=(15, 5))
+    
+    # Liste mit benutzerdefinierten Farben
+    todo_frame = ttk.Frame(card, style="Card.TFrame")
+    todo_frame.pack(fill="both", expand=True, padx=15, pady=5)
+    
+    # Listbox mit modernisierten Farben und Rahmen
+    todo_listbox = tk.Listbox(todo_frame, bg=COLORS["bg_light"], fg=COLORS["text_light"],
+                             font=("Arial", 10), selectbackground=COLORS["accent"],
+                             selectforeground=COLORS["bg_dark"], borderwidth=0,
+                             highlightthickness=0, activestyle="none")
+    todo_listbox.pack(side="left", fill="both", expand=True)
+    
+    # Beispiel-To-Dos aus der Datenbank laden oder Dummy-Daten anzeigen
+    cursor = app.conn.cursor()
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='todos'")
+    if cursor.fetchone():
+        cursor.execute("SELECT text FROM todos WHERE erledigt = 0 ORDER BY erstellt_am DESC")
+        todos = cursor.fetchall()
+        for todo in todos:
+            todo_listbox.insert(tk.END, todo[0])
+    else:
+        # Falls Tabelle noch nicht existiert
+        todo_listbox.insert(tk.END, "Bestandsanalyse durchführen")
+        todo_listbox.insert(tk.END, "Werkstattreinigung planen")
+        todo_listbox.insert(tk.END, "Teilebestellung überprüfen")
+    
+    # Scrollbar mit angepassten Farben
+    scrollbar = tk.Scrollbar(todo_frame, orient="vertical", command=todo_listbox.yview)
+    scrollbar.pack(side="right", fill="y")
+    scrollbar.config(troughcolor=COLORS["bg_light"], bg=COLORS["bg_medium"])
+    todo_listbox.config(yscrollcommand=scrollbar.set)
+    
+    # Eingabebereich für neue To-Dos
+    input_frame = ttk.Frame(card, style="Card.TFrame")
+    input_frame.pack(fill="x", padx=15, pady=(5, 15))
+    
+    todo_entry = tk.Entry(input_frame, bg=COLORS["bg_light"], fg=COLORS["text_light"],
+                         insertbackground=COLORS["text_light"], font=("Arial", 10),
+                         relief="flat", highlightthickness=0)
+    todo_entry.pack(side="left", fill="x", expand=True, ipady=5, padx=(0, 5))
+    
+    # Funktionen für die To-Do-Liste
+    def add_todo():
+        todo_text = todo_entry.get().strip()
+        if todo_text:
+            # In Datenbank speichern
+            # Prüfen, ob die Tabelle existiert
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='todos'")
+            if not cursor.fetchone():
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS todos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    text TEXT NOT NULL,
+                    erledigt INTEGER DEFAULT 0,
+                    erstellt_am TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """)
+                app.conn.commit()
+            
+            # Todo einfügen
+            cursor.execute("INSERT INTO todos (text) VALUES (?)", (todo_text,))
+            app.conn.commit()
+            
+            # In Listbox anzeigen
+            todo_listbox.insert(tk.END, todo_text)
+            todo_entry.delete(0, tk.END)
+    
+    def remove_selected_todo():
+        selected = todo_listbox.curselection()
+        if selected:
+            todo_text = todo_listbox.get(selected[0])
+            
+            # Aus Datenbank löschen
+            cursor.execute("UPDATE todos SET erledigt = 1 WHERE text = ?", (todo_text,))
+            app.conn.commit()
+            
+            # Aus Listbox entfernen
+            todo_listbox.delete(selected)
+    
+    # Enter-Taste zum Hinzufügen
+    todo_entry.bind("<Return>", lambda event: add_todo())
+    
+    # Doppelklick oder Entf-Taste zum Entfernen
+    todo_listbox.bind("<Double-1>", lambda event: remove_selected_todo())
+    todo_listbox.bind("<Delete>", lambda event: remove_selected_todo())
+    
+    # Buttons für Hinzufügen/Entfernen mit modernem Design
+    class SmallButton(tk.Button):
+        def __init__(self, parent, text, command, primary=False, **kwargs):
+            bg_color = COLORS["accent"] if primary else COLORS["bg_light"]
+            fg_color = COLORS["bg_dark"] if primary else COLORS["text_light"]
+            
+            super().__init__(parent, text=text, command=command, 
+                            bg=bg_color, fg=fg_color,
+                            activebackground=COLORS["text_light"], 
+                            activeforeground=COLORS["bg_dark"],
+                            relief="flat", borderwidth=0, padx=6, pady=4,
+                            font=("Arial", 9), cursor="hand2", **kwargs)
+    
+    add_btn = SmallButton(input_frame, text="+", command=add_todo, primary=True)
+    add_btn.pack(side="left", ipady=2)
+    
+    return card, todo_listbox, todo_entry

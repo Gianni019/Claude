@@ -26,16 +26,21 @@ COLORS = {
 }
 
 class ModernButton(tk.Button):
-    def __init__(self, parent, text, command, primary=False, **kwargs):
+    def __init__(self, parent, text="", command=None, primary=False, **kwargs):
+        # Standard-Styles für den Button
         bg_color = COLORS["accent"] if primary else COLORS["bg_light"]
         fg_color = COLORS["bg_dark"] if primary else COLORS["text_light"]
+        
+        # Standardwerte, wenn nicht in kwargs vorhanden
+        if 'font' not in kwargs:
+            kwargs['font'] = ("Arial", 10)
         
         super().__init__(parent, text=text, command=command, 
                         bg=bg_color, fg=fg_color,
                         activebackground=COLORS["text_light"], 
                         activeforeground=COLORS["bg_dark"],
                         relief="flat", borderwidth=0, padx=15, pady=8,
-                        font=("Arial", 10), cursor="hand2", **kwargs)
+                        cursor="hand2", **kwargs)
 
 class KalenderVerwaltung:
     """Hauptklasse für die Kalenderverwaltung"""
@@ -105,9 +110,8 @@ class KalenderVerwaltung:
         title_frame = ttk.Frame(header_frame, style="Card.TFrame")
         title_frame.pack(fill="x", pady=5)
         
-        # Vorheriger Monat
-        prev_btn = ModernButton(title_frame, text="◀", command=self.previous_month, 
-                              font=("Arial", 12), padx=10)
+        # Vorheriger Monat - KORRIGIERT: kein 'font' Parameter in kwargs
+        prev_btn = ModernButton(title_frame, text="◀", command=self.previous_month, padx=10)
         prev_btn.pack(side="left", padx=5)
         
         # Aktueller Monat und Jahr
@@ -116,9 +120,8 @@ class KalenderVerwaltung:
         self.month_label.pack(side="left", padx=20)
         self.update_month_label()
         
-        # Nächster Monat
-        next_btn = ModernButton(title_frame, text="▶", command=self.next_month, 
-                              font=("Arial", 12), padx=10)
+        # Nächster Monat - KORRIGIERT: kein 'font' Parameter in kwargs
+        next_btn = ModernButton(title_frame, text="▶", command=self.next_month, padx=10)
         next_btn.pack(side="left", padx=5)
         
         # Zum aktuellen Monat zurückkehren
@@ -663,20 +666,20 @@ class KalenderVerwaltung:
                         **kwargs
                     )
             
-            # Bearbeiten-Button
+            # Bearbeiten-Button (Fortsetzung)
             edit_btn = SmallButton(btn_frame, text="Bearbeiten", 
-                                  command=lambda a=appt: self.edit_appointment(a))
+                                command=lambda a=appt: self.edit_appointment(a))
             edit_btn.pack(side="left", padx=(0, 3))
-            
+
             # Löschen-Button
             delete_btn = SmallButton(btn_frame, text="Löschen", 
                                     command=lambda a=appt: self.delete_appointment(a))
             delete_btn.pack(side="left")
-            
+
             # Klick-Event für Detailansicht
             for widget in (appt_frame, content_frame, title_label, status_label):
                 widget.bind("<Button-1>", lambda e, a=appt: self.show_appointment_details(a))
-    
+
     def get_customer_name(self, customer_id):
         """Gibt den Namen eines Kunden anhand seiner ID zurück"""
         cursor = self.conn.cursor()
@@ -686,7 +689,7 @@ class KalenderVerwaltung:
         )
         result = cursor.fetchone()
         return result[0] if result else "Unbekannt"
-    
+
     def show_appointment_details(self, appointment):
         """Zeigt Details zu einem Termin an"""
         # Platzhalter - hier würde eine detaillierte Ansicht implementiert
@@ -697,23 +700,23 @@ class KalenderVerwaltung:
             f"Status: {appointment['status']}\n"
             f"Beschreibung: {appointment['description'] or 'Keine Beschreibung'}"
         )
-    
+
     def new_appointment(self):
         """Erstellt einen neuen Termin"""
         # Terminbearbeitungsdialog öffnen
         AppointmentDialog(self.dialog, "Neuer Termin", self.conn, self.selected_date, 
-                          on_save=self.refresh_calendar)
-    
+                        on_save=self.refresh_calendar)
+
     def edit_appointment(self, appointment):
         """Bearbeitet einen bestehenden Termin"""
         # Terminbearbeitungsdialog öffnen
         AppointmentDialog(self.dialog, "Termin bearbeiten", self.conn, self.selected_date, 
-                          appointment_id=appointment['id'], on_save=self.refresh_calendar)
-    
+                        appointment_id=appointment['id'], on_save=self.refresh_calendar)
+
     def delete_appointment(self, appointment):
         """Löscht einen Termin"""
         if messagebox.askyesno("Löschen bestätigen", 
-                              f"Möchten Sie den Termin '{appointment['title']}' wirklich löschen?"):
+                            f"Möchten Sie den Termin '{appointment['title']}' wirklich löschen?"):
             try:
                 cursor = self.conn.cursor()
                 cursor.execute("DELETE FROM termine WHERE id = ?", (appointment['id'],))
@@ -725,14 +728,13 @@ class KalenderVerwaltung:
                 messagebox.showinfo("Erfolg", "Termin wurde gelöscht")
             except sqlite3.Error as e:
                 messagebox.showerror("Fehler", f"Fehler beim Löschen des Termins: {e}")
-    
+
     def refresh_calendar(self):
         """Aktualisiert den Kalender"""
         # Termine neu laden
         self.fill_calendar()
         self.load_appointments()
-
-
+        
 class AppointmentDialog:
     """Dialog zur Bearbeitung von Terminen"""
     def __init__(self, parent, title, conn, date, appointment_id=None, on_save=None):

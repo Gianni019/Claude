@@ -761,45 +761,76 @@ def add_parts_to_auftrag(app):
         app.update_status("Teile zum Auftrag hinzugefügt")
 
 def change_auftrag_status(app):
-    """Ändert den Status eines Auftrags"""
+    """Ändert den Status eines Auftrags auf die nächste Stufe"""
     auftrag_id = get_selected_auftrag_id(app)
     if not auftrag_id:
         messagebox.showinfo("Information", "Bitte wählen Sie einen Auftrag aus.")
         return
         
-    aktueller_status = app.auftraege_widgets['auftraege_tree'].item(app.auftraege_widgets['auftraege_tree'].selection()[0])['values'][3]
+    cursor = app.conn.cursor()
+    cursor.execute("SELECT status FROM auftraege WHERE id = ?", (auftrag_id,))
+    aktueller_status = cursor.fetchone()[0]
     
-    # Statusauswahl
-    status_options = ["Offen", "In Bearbeitung", "Warten auf Teile", "Abgeschlossen"]
-    new_status = simpledialog.askstring(
-        "Status ändern",
-        "Neuer Status:",
-        initialvalue=aktueller_status,
-        parent=app.root
-    )
+    # Status-Sequenz definieren
+    status_sequence = ["Offen", "In Bearbeitung", "Warten auf Teile", "Abgeschlossen"]
     
-    if new_status and new_status in status_options:
-        try:
-            cursor = app.conn.cursor()
+    # Nächsten Status ermitteln
+    try:
+        current_index = status_sequence.index(aktueller_status)
+        next_index = (current_index + 1) % len(status_sequence)
+        next_status = status_sequence[next_index]
+    except ValueError:
+        # Falls aktueller Status nicht in der Sequenz ist
+        next_status = status_sequence[0]
+    
+    try:
+        # Bei Abschluss das Abschlussdatum setzen
+        if next_status == "Abgeschlossen":
+            cursor.execute(
+                "UPDATE auftraege SET status = ?, abgeschlossen_am = datetime('now') WHERE id = ?",
+                (next_status, auftrag_id)
+            )
+        else:
+            cursor.execute(
+                "UPDATE auftraege SET status = ? WHERE id = ?",
+                (next_status, auftrag_id)
+            )
             
-            # Bei Abschluss das Abschlussdatum setzen
-            if new_status == "Abgeschlossen":
-                cursor.execute(
-                    "UPDATE auftraege SET status = ?, abgeschlossen_am = datetime('now') WHERE id = ?",
-                    (new_status, auftrag_id)
-                )
-            else:
-                cursor.execute(
-                    "UPDATE auftraege SET status = ? WHERE id = ?",
-                    (new_status, auftrag_id)
-                )
+        app.conn.commit()
+        app.load_auftraege()
+        
+        # Auftrag wieder anzeigen nach dem Speichern
+        for item in app.auftraege_widgets['auftraege_tree'].get_children():
+            if app.auftraege_widgets['auftraege_tree'].item(item)['values'][0] == auftrag_id:
+                app.auftraege_widgets['auftraege_tree'].selection_set(item)
+                app.auftraege_widgets['auftraege_tree'].focus(item)
+                app.auftraege_widgets['auftraege_tree'].see(item)
+                show_auftrag_details(app)
+                break
                 
-            app.conn.commit()
-            app.load_auftraege()
-            app.update_status(f"Auftragsstatus auf '{new_status}' geändert")
-        except sqlite3.Error as e:
-            messagebox.showerror("Fehler", f"Fehler beim Ändern des Status: {e}")
-            app.conn.rollback()
+        # Status in der Detailansicht aktualisieren
+        app.auftraege_widgets['auftrag_status'].config(text=next_status)
+        
+        # Status-Farbe aktualisieren
+        status_farbe = "black"
+        if next_status == "Offen":
+            status_farbe = "#CC0000"  # Rot
+        elif next_status == "In Bearbeitung":
+            status_farbe = "#CC6600"  # Orange
+        elif next_status == "Warten auf Teile":
+            status_farbe = "#0000CC"  # Blau
+        elif next_status == "Abgeschlossen":
+            status_farbe = "#006600"  # Grün
+            
+        app.auftraege_widgets['auftrag_status'].config(foreground=status_farbe)
+        
+        app.update_status(f"Auftragsstatus auf '{next_status}' geändert")
+        
+        # Bei Statusänderung das Dashboard aktualisieren
+        app.update_dashboard()
+    except sqlite3.Error as e:
+        messagebox.showerror("Fehler", f"Fehler beim Ändern des Status: {e}")
+        app.conn.rollback()
 
 def save_auftrag_notizen(app):
     """Speichert Notizen zu einem Auftrag"""
