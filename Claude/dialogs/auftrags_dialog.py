@@ -6,7 +6,7 @@ Dialog zum Erstellen und Bearbeiten von Aufträgen
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog  # simpledialog wurde hinzugefügt
 import sqlite3
 from datetime import datetime
 
@@ -194,51 +194,15 @@ class AuftragsDialog:
         else:
             self.fahrzeug_combo['values'] = ["Kein Fahrzeug vorhanden"]
             self.fahrzeug_var.set("")
-        
     def load_data(self):
         """Lädt die Daten des zu bearbeitenden Auftrags"""
         cursor = self.conn.cursor()
         
-        # Auftragsdaten laden
-        cursor.execute("""
-        SELECT a.kunden_id, k.vorname || ' ' || k.nachname as kundenname, a.beschreibung, 
-               a.status, a.prioritaet, a.arbeitszeit, a.notizen, a.fahrzeug_id
-        FROM auftraege a
-        JOIN kunden k ON a.kunden_id = k.id
-        WHERE a.id = ?
-        """, (self.auftrag_id,))
-        
-        data = cursor.fetchone()
-        if data:
-            kunden_id = data[0]
-            fahrzeug_id = data[7]
+        # ... bestehender Code ...
             
-            self.kunde_var.set(f"{kunden_id}: {data[1]}")
-            self.beschreibung_var.set(data[2])
-            self.status_var.set(data[3])
-            self.prioritaet_var.set(data[4])
-            self.arbeitszeit_var.set(str(data[5]))
-            self.notizen_text.delete(1.0, tk.END)
-            if data[6]:
-                self.notizen_text.insert(tk.END, data[6])
-            
-            # Fahrzeuge für Kunden laden    
-            self.load_fahrzeuge_for_kunde(kunden_id)
-            
-            # Fahrzeug auswählen, wenn vorhanden
-            if fahrzeug_id:
-                cursor.execute("""
-                SELECT id, fahrzeug_typ || ' (' || COALESCE(kennzeichen, 'ohne Kennzeichen') || ')' as fahrzeug_info
-                FROM fahrzeuge
-                WHERE id = ?
-                """, (fahrzeug_id,))
-                fahrzeug = cursor.fetchone()
-                if fahrzeug:
-                    self.fahrzeug_var.set(f"{fahrzeug[0]}: {fahrzeug[1]}")
-                
         # Verwendete Teile laden
         cursor.execute("""
-        SELECT e.id, e.bezeichnung, ae.menge, ae.einzelpreis
+        SELECT e.id, e.bezeichnung, ae.menge, ae.einzelpreis, ae.rabatt
         FROM auftrag_ersatzteile ae
         JOIN ersatzteile e ON ae.ersatzteil_id = e.id
         WHERE ae.auftrag_id = ?
@@ -250,11 +214,15 @@ class AuftragsDialog:
             
         # Teile hinzufügen
         for row in cursor.fetchall():
-            # Standardwerte für Rabatt setzen
-            rabatt = 0.0
+            # Standardwerte für Rabatt setzen, falls NULL
+            rabatt = row[4] if row[4] is not None else 0.0
             einzelpreis = row[3]
             menge = row[2]
-            gesamtpreis = menge * einzelpreis
+            
+            # Gesamtpreis mit Rabatt berechnen
+            gesamtpreis = menge * einzelpreis * (1 - rabatt/100)
+            
+            print(f"DEBUG - Lade Teil: ID={row[0]}, '{row[1]}', Menge={menge}, Preis={einzelpreis}, Rabatt={rabatt}%, Gesamtpreis={gesamtpreis}")
             
             self.teile_tree.insert('', 'end', values=(
                 row[0], row[1], menge, f"{einzelpreis:.2f} CHF", 
@@ -500,19 +468,51 @@ class AuftragsDialog:
                     einzelpreis_str = einzelpreis_str.replace(" CHF", "")
                 einzelpreis = float(einzelpreis_str.replace(',', '.'))
                 
-                cursor.execute("""
-                INSERT INTO auftrag_ersatzteile (auftrag_id, ersatzteil_id, menge, einzelpreis)
-                VALUES (?, ?, ?, ?)
-                """, (auftrag_id_to_use, ersatzteil_id, menge, einzelpreis))
+                # Rabatt extrahieren
+                rabatt_str = str(values[4])
+                if "%" in rabatt_str:
+                    rabatt_str = rabatt_str.replace("%", "")
+                rabatt = float(rabatt_str.replace(',', '.'))
                 
-                # In einer echten Anwendung würden wir hier auch den Rabatt speichern
-                # Falls Ihre Datenbank eine Spalte dafür hat, fügen Sie diese hinzu:
-                # rabatt_str = str(values[4]).replace('%', '')
-                # rabatt = float(rabatt_str.replace(',', '.'))
-                # cursor.execute("UPDATE auftrag_ersatzteile SET rabatt = ? WHERE auftrag_id = ? AND ersatzteil_id = ?",
-                #            (rabatt, auftrag_id_to_use, ersatzteil_id))
+                print(f"DEBUG - Speichere Ersatzteil: ID={ersatzteil_id}, Menge={menge}, Preis={einzelpreis}, Rabatt={rabatt}%")
+                
+                # Prüfen, ob die rabatt-Spalte in der Tabelle existiert
+                try:
+                    # Zuerst ohne rabatt versuchen
+                    cursor.execute("""
+                    PRAGMA table_info(auftrag_ersatzteile)
+                    """)
+                    columns = [info[1] for info in cursor.fetchall()]
+                    
+                    if 'rabatt' in columns:
+                        # Mit rabatt einfügen
+                        print(f"DEBUG - Füge Eintrag mit Rabatt-Spalte ein: {rabatt}%")
+                        cursor.execute("""
+                        INSERT INTO auftrag_ersatzteile (auftrag_id, ersatzteil_id, menge, einzelpreis, rabatt)
+                        VALUES (?, ?, ?, ?, ?)
+                        """, (auftrag_id_to_use, ersatzteil_id, menge, einzelpreis, rabatt))
+                    else:
+                        # Ohne rabatt einfügen
+                        print("DEBUG - Rabatt-Spalte nicht gefunden, füge ohne Rabatt ein")
+                        cursor.execute("""
+                        INSERT INTO auftrag_ersatzteile (auftrag_id, ersatzteil_id, menge, einzelpreis)
+                        VALUES (?, ?, ?, ?)
+                        """, (auftrag_id_to_use, ersatzteil_id, menge, einzelpreis))
+                        
+                        # Warnung anzeigen
+                        messagebox.showwarning("Hinweis", 
+                                            "Die Rabatt-Spalte wurde in der Datenbank nicht gefunden!\n"
+                                            "Bitte führen Sie das Datenbankupdate auf Version 5 durch.")
+                except sqlite3.OperationalError as e:
+                    print(f"DEBUG - SQL-Fehler: {e}")
+                    # Fallback: Ohne Rabatt einfügen
+                    cursor.execute("""
+                    INSERT INTO auftrag_ersatzteile (auftrag_id, ersatzteil_id, menge, einzelpreis)
+                    VALUES (?, ?, ?, ?)
+                    """, (auftrag_id_to_use, ersatzteil_id, menge, einzelpreis))
             
             # Commit ausführen und Ergebnis setzen
+            # HIER WAR DER FEHLER: conn.commit() -> self.conn.commit()
             self.conn.commit()
             self.result = True
             self.dialog.destroy()

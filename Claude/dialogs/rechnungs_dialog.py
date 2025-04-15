@@ -71,7 +71,7 @@ class RechnungsDialog:
             self.auftraege_tree.pack(side="left", fill="both", expand=True)
             
             # Aufträge laden
-            self.load_auftraege()
+            self.load_auftraege_data()
             
             # Auftrag auswählen-Button
             ttk.Button(auftrag_frame, text="Auftrag auswählen", command=self.select_auftrag).pack(side="right", padx=10, pady=10)
@@ -105,6 +105,81 @@ class RechnungsDialog:
         if search_term:
             # Hervorheben der Treffer
             self.auftraege_tree.tag_configure('match', background='lightyellow')
+
+    def load_auftraege_data(self):
+        """Lädt die Liste der Aufträge für die Auswahl"""
+        cursor = self.conn.cursor()
+        cursor.execute("""
+        SELECT a.id, k.vorname || ' ' || k.nachname as kunde, a.beschreibung, a.status,
+               strftime('%d.%m.%Y', a.erstellt_am) as datum
+        FROM auftraege a
+        LEFT JOIN kunden k ON a.kunden_id = k.id
+        WHERE a.status = 'Abgeschlossen' AND 
+              a.id NOT IN (SELECT auftrag_id FROM rechnungen)
+        ORDER BY a.erstellt_am DESC
+        """)
+        
+        # Treeview leeren
+        for item in self.auftraege_tree.get_children():
+            self.auftraege_tree.delete(item)
+            
+        # Daten einfügen
+        for row in cursor.fetchall():
+            self.auftraege_tree.insert('', 'end', values=row)
+    
+    def select_auftrag(self):
+        """Wird aufgerufen, wenn ein Auftrag ausgewählt wurde"""
+        selected_items = self.auftraege_tree.selection()
+        if not selected_items:
+            messagebox.showinfo("Information", "Bitte wählen Sie einen Auftrag aus.")
+            return
+            
+        # ID des ausgewählten Auftrags
+        self.auftrag_id = self.auftraege_tree.item(selected_items[0])['values'][0]
+        
+        # Alte Widgets entfernen
+        for widget in self.dialog.winfo_children():
+            widget.destroy()
+            
+        # Neuen Hauptframe erstellen
+        main_frame = ttk.Frame(self.dialog, padding=10)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Rechnungsdaten anzeigen
+        self.create_rechnung_view(main_frame)
+        
+    def generate_rechnung_nummer(self):
+        """Generiert eine neue Rechnungsnummer basierend auf dem aktuellen Datum und der letzten Nummer"""
+        current_year = datetime.now().year
+        
+        # Letzte Rechnungsnummer für dieses Jahr ermitteln
+        cursor = self.conn.cursor()
+        cursor.execute("""
+        SELECT rechnungsnummer FROM rechnungen 
+        WHERE rechnungsnummer LIKE ?
+        ORDER BY rechnungsnummer DESC
+        LIMIT 1
+        """, (f"RE-{current_year}-%",))
+        
+        last_invoice = cursor.fetchone()
+        
+        if last_invoice:
+            # Letzte Nummer extrahieren und inkrementieren
+            parts = last_invoice[0].split('-')
+            if len(parts) == 3:
+                try:
+                    last_number = int(parts[2])
+                    new_number = last_number + 1
+                except ValueError:
+                    new_number = 1
+            else:
+                new_number = 1
+        else:
+            new_number = 1
+            
+        # Neue Rechnungsnummer erstellen
+        rechnung_nummer = f"RE-{current_year}-{new_number:03d}"
+        self.rechnungsnr_var.set(rechnung_nummer)
         
     def create_rechnung_view(self, parent_frame=None):
         """Erstellt die Ansicht für die Rechnungsdaten"""
@@ -261,6 +336,22 @@ class RechnungsDialog:
             
             # Gesamtbeträge aktualisieren
             self.update_summen()
+
+    def remove_position(self):
+        """Entfernt eine Position"""
+        selected_items = self.positionen_tree.selection()
+        if not selected_items:
+            messagebox.showinfo("Information", "Bitte wählen Sie eine Position aus.")
+            return
+            
+        # Position entfernen
+        self.positionen_tree.delete(selected_items[0])
+        
+        # Positionen neu nummerieren
+        self.renumber_positions()
+        
+        # Gesamtbetrag aktualisieren
+        self.update_summen()
             
     def edit_position(self):
         """Bearbeitet eine Position"""
@@ -419,9 +510,10 @@ class RechnungsDialog:
             
         cursor = self.conn.cursor()
         
-        # Verwendete Ersatzteile laden
+        # Verwendete Ersatzteile laden - KORRIGIERT: Rabatten werden explizit abgerufen
         cursor.execute("""
-        SELECT e.bezeichnung, ae.menge, ae.einzelpreis, ae.menge * ae.einzelpreis as gesamtpreis
+        SELECT e.bezeichnung, ae.menge, ae.einzelpreis, ae.menge * ae.einzelpreis as gesamtpreis, 
+            COALESCE(ae.rabatt, 0) as rabatt
         FROM auftrag_ersatzteile ae
         JOIN ersatzteile e ON ae.ersatzteil_id = e.id
         WHERE ae.auftrag_id = ?
@@ -440,14 +532,16 @@ class RechnungsDialog:
             bezeichnung = row[0]
             menge = row[1]
             einzelpreis = row[2]
-            gesamtpreis = row[3]
-            rabatt = 0.0  # Standardwert für Rabatt
+            gesamtpreis_ohne_rabatt = row[3]
+            rabatt = row[4]  # Rabatt aus der Datenbank
             
             # Gesamtpreis mit Rabatt berechnen
-            rabatt_betrag = gesamtpreis * (rabatt / 100)
-            gesamtpreis_nach_rabatt = gesamtpreis - rabatt_betrag
+            rabatt_betrag = gesamtpreis_ohne_rabatt * (rabatt / 100)
+            gesamtpreis_nach_rabatt = gesamtpreis_ohne_rabatt - rabatt_betrag
             
             summe += gesamtpreis_nach_rabatt
+            
+            print(f"DEBUG - Rechnung Position: '{bezeichnung}', Menge={menge}, Preis={einzelpreis}, Rabatt={rabatt}%, Gesamtpreis={gesamtpreis_nach_rabatt}")
             
             self.positionen_tree.insert('', 'end', values=(
                 pos, bezeichnung, menge, f"{einzelpreis:.2f} CHF", f"{rabatt:.2f}%", f"{gesamtpreis_nach_rabatt:.2f} CHF"
@@ -465,7 +559,7 @@ class RechnungsDialog:
             
             arbeitszeit = auftrag[1]
             arbeitskosten = arbeitszeit * stundensatz
-            rabatt = 0.0  # Standardwert für Rabatt
+            rabatt = 0.0  # Standardwert für Rabatt bei Arbeitszeit
             
             # Gesamtpreis mit Rabatt berechnen
             rabatt_betrag = arbeitskosten * (rabatt / 100)
@@ -484,112 +578,15 @@ class RechnungsDialog:
             
         # Summen aktualisieren
         self.update_summen()
-    
-    def add_position(self):
-        """Fügt eine manuelle Position zur Rechnung hinzu"""
-        position_dialog = PositionDialog(self.dialog, "Position hinzufügen")
-        
-        if position_dialog.result:
-            bezeichnung, menge, einzelpreis = position_dialog.result
-            
-            # Positionsnummer bestimmen
-            pos = len(self.positionen_tree.get_children()) + 1
-            
-            # Gesamtpreis berechnen
-            gesamtpreis = menge * einzelpreis
-            
-            # Position einfügen
-            self.positionen_tree.insert('', 'end', values=(
-                pos, bezeichnung, menge, f"{einzelpreis:.2f} CHF", f"{gesamtpreis:.2f} CHF"
-            ))
-            
-            # Gesamtbetrag aktualisieren
-            self.update_gesamtbetrag()
-            
-    def edit_position(self):
-        """Bearbeitet eine Position"""
-        selected_items = self.positionen_tree.selection()
-        if not selected_items:
-            messagebox.showinfo("Information", "Bitte wählen Sie eine Position aus.")
-            return
-            
-        # Aktuelle Werte auslesen
-        values = self.positionen_tree.item(selected_items[0])['values']
-        bezeichnung = values[1]
-        menge_str = str(values[2])
-        
-        # Einheiten entfernen, wenn vorhanden
-        if " h" in menge_str:
-            menge_str = menge_str.replace(" h", "")
-            
-        menge = float(menge_str)
-        
-        einzelpreis_str = str(values[3])
-        if " CHF/h" in einzelpreis_str:
-            einzelpreis_str = einzelpreis_str.replace(" CHF/h", "")
-        elif " CHF" in einzelpreis_str:
-            einzelpreis_str = einzelpreis_str.replace(" CHF", "")
-            
-        einzelpreis = float(einzelpreis_str.replace(',', '.'))
-        
-        # Dialog zur Bearbeitung
-        position_dialog = PositionDialog(self.dialog, "Position bearbeiten", 
-                                        bezeichnung, menge, einzelpreis)
-        
-        if position_dialog.result:
-            neue_bezeichnung, neue_menge, neuer_einzelpreis = position_dialog.result
-            
-            # Gesamtpreis berechnen
-            gesamtpreis = neue_menge * neuer_einzelpreis
-            
-            # Position aktualisieren
-            self.positionen_tree.item(selected_items[0], values=(
-                values[0], neue_bezeichnung, neue_menge, 
-                f"{neuer_einzelpreis:.2f} CHF", f"{gesamtpreis:.2f} CHF"
-            ))
-            
-            # Gesamtbetrag aktualisieren
-            self.update_gesamtbetrag()
-            
-    def remove_position(self):
-        """Entfernt eine Position"""
-        selected_items = self.positionen_tree.selection()
-        if not selected_items:
-            messagebox.showinfo("Information", "Bitte wählen Sie eine Position aus.")
-            return
-            
-        # Position entfernen
-        self.positionen_tree.delete(selected_items[0])
-        
-        # Positionen neu nummerieren
-        self.renumber_positions()
-        
-        # Gesamtbetrag aktualisieren
-        self.update_gesamtbetrag()
-        
+
     def renumber_positions(self):
         """Nummeriert die Positionen neu durch"""
         items = self.positionen_tree.get_children()
         
         for i, item in enumerate(items, start=1):
             values = self.positionen_tree.item(item)['values']
-            self.positionen_tree.item(item, values=(i, values[1], values[2], values[3], values[4]))
-            
-    def update_gesamtbetrag(self):
-        """Aktualisiert den Gesamtbetrag der Rechnung"""
-        summe = 0
-        
-        for item in self.positionen_tree.get_children():
-            gesamtpreis_str = self.positionen_tree.item(item)['values'][4]
-            
-            # CHF-Zeichen entfernen
-            if " CHF" in gesamtpreis_str:
-                gesamtpreis_str = gesamtpreis_str.replace(" CHF", "")
-                
-            summe += float(gesamtpreis_str.replace(',', '.'))
-            
-        self.gesamtbetrag_var.set(f"{summe:.2f} CHF")
-
+            self.positionen_tree.item(item, values=(i, values[1], values[2], values[3], values[4], values[5]))
+    
     def save_rechnung(self):
         """Speichert die Rechnung"""
         # Pflichtfelder prüfen
@@ -872,26 +869,6 @@ class PositionDialog:
             self.dialog.destroy()
         except ValueError:
             messagebox.showerror("Fehler", "Bitte geben Sie gültige Werte für Menge, Preis und Rabatt ein.")
-        
-    def save_data(self):
-        """Speichert die Positionsdaten"""
-        # Pflichtfelder prüfen
-        if not self.bezeichnung_var.get():
-            messagebox.showerror("Fehler", "Bitte geben Sie eine Bezeichnung ein.")
-            return
-            
-        try:
-            menge = float(self.menge_var.get().replace(',', '.'))
-            einzelpreis = float(self.einzelpreis_var.get().replace(',', '.'))
-            
-            if menge <= 0 or einzelpreis < 0:
-                messagebox.showerror("Fehler", "Menge muss größer als 0 und Preis darf nicht negativ sein.")
-                return
-            
-            self.result = (self.bezeichnung_var.get(), menge, einzelpreis)
-            self.dialog.destroy()
-        except ValueError:
-            messagebox.showerror("Fehler", "Bitte geben Sie gültige Werte für Menge und Preis ein.")
 
 
 class RechnungsAnzeigeDialog:
@@ -1126,7 +1103,7 @@ class RechnungsAnzeigeDialog:
         rechnungsnr = cursor.fetchone()[0].replace('/', '_').replace(' ', '_')
         
         default_filename = f"Rechnung_{rechnungsnr}.pdf"
-        
+
         # Speicherort wählen
         file_path = filedialog.asksaveasfilename(
             parent=self.dialog,
@@ -1143,5 +1120,19 @@ class RechnungsAnzeigeDialog:
         
         if success:
             messagebox.showinfo("Information", f"Die Rechnung wurde als PDF gespeichert: {file_path}")
+            
+            # PDF öffnen
+            try:
+                import subprocess
+                import platform
+                
+                if platform.system() == 'Windows':
+                    os.startfile(file_path)
+                elif platform.system() == 'Linux':
+                    subprocess.call(['xdg-open', file_path])
+                else:  # macOS
+                    subprocess.call(['open', file_path])
+            except Exception as e:
+                messagebox.showinfo("Hinweis", f"PDF wurde gespeichert, konnte aber nicht automatisch geöffnet werden: {e}")
         else:
             messagebox.showerror("Fehler", f"Fehler beim Speichern der PDF: {pdf_path}")

@@ -400,9 +400,10 @@ def show_auftrag_details(app, no_selection_label=None, details_frame=None):
             fahrzeug_info = "Kein Fahrzeug zugeordnet"
     
     app.auftraege_widgets['auftrag_fahrzeug_info'].config(text=fahrzeug_info)
-# Verwendete Ersatzteile abrufen
+
+    # Verwendete Ersatzteile abrufen - HIER WURDE DIE ABFRAGE GEÄNDERT
     cursor.execute("""
-    SELECT e.bezeichnung, ae.menge, printf("%.2f", ae.einzelpreis) as preis
+    SELECT e.bezeichnung, ae.menge, ae.einzelpreis, COALESCE(ae.rabatt, 0) as rabatt
     FROM auftrag_ersatzteile ae
     JOIN ersatzteile e ON ae.ersatzteil_id = e.id
     WHERE ae.auftrag_id = ?
@@ -420,9 +421,14 @@ def show_auftrag_details(app, no_selection_label=None, details_frame=None):
         bezeichnung = row[0]
         menge = row[1]
         einzelpreis = float(row[2])
-        rabatt = 0.0  # Standardwert
-        gesamtpreis = menge * einzelpreis * (1 - rabatt/100)
+        rabatt = float(row[3])  # Rabatt jetzt aus der Datenbank
+        
+        # Gesamtpreis unter Berücksichtigung des Rabatts berechnen
+        rabatt_betrag = einzelpreis * menge * (rabatt / 100)
+        gesamtpreis = (einzelpreis * menge) - rabatt_betrag
         gesamtsumme += gesamtpreis
+        
+        print(f"DEBUG - Zeige Teil an: '{bezeichnung}', Menge={menge}, Preis={einzelpreis}, Rabatt={rabatt}%, Gesamtpreis={gesamtpreis}")
         
         app.auftraege_widgets['auftrag_parts_tree'].insert('', 'end', values=(
             bezeichnung, menge, f"{einzelpreis:.2f} CHF", f"{rabatt:.2f}%", f"{gesamtpreis:.2f} CHF"

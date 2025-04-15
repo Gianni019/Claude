@@ -16,7 +16,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import mm, cm
+from reportlab.lib.units import mm, cm      
 from reportlab.lib.enums import TA_RIGHT, TA_CENTER, TA_LEFT
 
 from utils.config import get_company_info
@@ -102,9 +102,9 @@ def generate_invoice_pdf(conn, rechnung_id, output_path=None):
             
         auftrag_beschreibung, arbeitszeit = auftrag_data
         
-        # Positionen abrufen (Ersatzteile)
+        # Positionen abrufen (Ersatzteile mit Rabatt)
         cursor.execute("""
-        SELECT e.bezeichnung, ae.menge, ae.einzelpreis
+        SELECT e.bezeichnung, ae.menge, ae.einzelpreis, COALESCE(ae.rabatt, 0) as rabatt
         FROM auftrag_ersatzteile ae
         JOIN ersatzteile e ON ae.ersatzteil_id = e.id
         WHERE ae.auftrag_id = ?
@@ -253,9 +253,9 @@ def generate_invoice_pdf(conn, rechnung_id, output_path=None):
         elements.append(Paragraph("<b>Positionen:</b>", styles['Normal']))
         elements.append(Spacer(1, 0.3*cm))
         
-        # Tabellenkopf für Positionen
+        # Tabellenkopf für Positionen mit Rabatt-Spalte
         positionen_data = [
-            ['Pos', 'Bezeichnung', 'Menge', 'Einzelpreis', 'Gesamtpreis']
+            ['Pos', 'Bezeichnung', 'Menge', 'Einzelpreis', 'Rabatt', 'Gesamtpreis']
         ]
         
         # Gesamtsumme
@@ -263,14 +263,21 @@ def generate_invoice_pdf(conn, rechnung_id, output_path=None):
         pos = 1
         
         # Ersatzteile hinzufügen
-        for bezeichnung, menge, einzelpreis in ersatzteile:
-            gesamtpreis = menge * einzelpreis
+        for bezeichnung, menge, einzelpreis, rabatt in ersatzteile:
+            # Gesamtpreis mit Rabatt berechnen
+            rabatt_betrag = menge * einzelpreis * (rabatt / 100)
+            gesamtpreis = (menge * einzelpreis) - rabatt_betrag
             zwischensumme += gesamtpreis
+            
+            # Formatierte Rabattanzeige
+            rabatt_anzeige = f"{rabatt:.2f} %" if rabatt > 0 else "-"
+            
             positionen_data.append([
                 str(pos),
                 bezeichnung,
                 str(menge),
                 f"{einzelpreis:.2f} CHF",
+                rabatt_anzeige,  # Rabatt anzeigen
                 f"{gesamtpreis:.2f} CHF"
             ])
             pos += 1
@@ -278,13 +285,18 @@ def generate_invoice_pdf(conn, rechnung_id, output_path=None):
         # Arbeitszeit hinzufügen, wenn vorhanden
         if arbeitszeit > 0:
             arbeitskosten = arbeitszeit * stundensatz
-            zwischensumme += arbeitskosten
+            # Kein Rabatt für Arbeitszeit (oder anpassen, falls nötig)
+            rabatt_arbeitszeit = 0
+            arbeitskosten_nach_rabatt = arbeitszeit * stundensatz * (1 - rabatt_arbeitszeit/100)
+            zwischensumme += arbeitskosten_nach_rabatt
+            
             positionen_data.append([
                 str(pos),
                 f"Arbeitszeit: {auftrag_beschreibung}",
                 f"{arbeitszeit:.2f} h",
                 f"{stundensatz:.2f} CHF/h",
-                f"{arbeitskosten:.2f} CHF"
+                "-",  # Kein Rabatt auf Arbeitszeit
+                f"{arbeitskosten_nach_rabatt:.2f} CHF"
             ])
         
         # Rabatt berechnen und anwenden, wenn vorhanden
@@ -302,7 +314,7 @@ def generate_invoice_pdf(conn, rechnung_id, output_path=None):
         endsumme = zwischensumme_nach_rabatt + mwst
         
         # Positions-Tabelle erstellen
-        col_widths = [1*cm, 8*cm, 2*cm, 3*cm, 3*cm]
+        col_widths = [0.8*cm, 7*cm, 2*cm, 3*cm, 2*cm, 3*cm]  # Spaltenbreiten angepasst für Rabatt
         positionen_table = Table(positionen_data, colWidths=col_widths)
         positionen_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
@@ -312,7 +324,7 @@ def generate_invoice_pdf(conn, rechnung_id, output_path=None):
             ('FONTSIZE', (0, 0), (-1, 0), 10),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
             ('ALIGN', (2, 1), (2, -1), 'CENTER'),
-            ('ALIGN', (3, 1), (4, -1), 'RIGHT'),
+            ('ALIGN', (3, 1), (5, -1), 'RIGHT'),  # Rechtsbündige Ausrichtung für Preise und Rabatte
             ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ]))
@@ -323,26 +335,26 @@ def generate_invoice_pdf(conn, rechnung_id, output_path=None):
         summary_data = []
         
         # Zwischensumme
-        summary_data.append(['', '', '', 'Zwischensumme:', f"{zwischensumme:.2f} CHF"])
+        summary_data.append(['', '', '', '', 'Zwischensumme:', f"{zwischensumme:.2f} CHF"])
         
         # Rabatt, wenn vorhanden
         if rabatt_prozent > 0:
-            summary_data.append(['', '', '', f'Rabatt ({rabatt_prozent}%):', f"- {rabatt_betrag:.2f} CHF"])
-            summary_data.append(['', '', '', 'Netto:', f"{zwischensumme_nach_rabatt:.2f} CHF"])
+            summary_data.append(['', '', '', '', f'Rabatt ({rabatt_prozent}%):', f"- {rabatt_betrag:.2f} CHF"])
+            summary_data.append(['', '', '', '', 'Netto:', f"{zwischensumme_nach_rabatt:.2f} CHF"])
         
         # MwSt
-        summary_data.append(['', '', '', f'MwSt ({mwst_satz}%):', f"{mwst:.2f} CHF"])
+        summary_data.append(['', '', '', '', f'MwSt ({mwst_satz}%):', f"{mwst:.2f} CHF"])
         
         # Gesamtbetrag
-        summary_data.append(['', '', '', 'Gesamtbetrag:', f"{endsumme:.2f} CHF"])
+        summary_data.append(['', '', '', '', 'Gesamtbetrag:', f"{endsumme:.2f} CHF"])
         
         # Zusammenfassungs-Tabelle erstellen
         summary_table = Table(summary_data, colWidths=col_widths)
         summary_table.setStyle(TableStyle([
-            ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
             ('ALIGN', (4, 0), (4, -1), 'RIGHT'),
-            ('FONTNAME', (3, -1), (4, -1), 'Helvetica-Bold'),
-            ('LINEABOVE', (3, -1), (4, -1), 1, colors.black),
+            ('ALIGN', (5, 0), (5, -1), 'RIGHT'),
+            ('FONTNAME', (4, -1), (5, -1), 'Helvetica-Bold'),
+            ('LINEABOVE', (4, -1), (5, -1), 1, colors.black),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ]))
         elements.append(summary_table)

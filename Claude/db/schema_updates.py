@@ -30,6 +30,9 @@ def update_database_schema(conn):
         
     if current_version < 4:
         update_to_version_4(conn)
+        
+    if current_version < 5:
+        update_to_version_5(conn)
     
     # Standardkonfiguration initialisieren
     init_default_config(conn)
@@ -137,3 +140,21 @@ def update_to_version_4(conn):
     
     conn.commit()
     print("Datenbankschema auf Version 4 aktualisiert.")
+
+def update_to_version_5(conn):
+    """Aktualisiert die Datenbank auf Version 5 (Rabatt-Spalte in auftrag_ersatzteile)"""
+    print("Aktualisiere Datenbankschema auf Version 5...")
+    cursor = conn.cursor()
+    
+    # Spalte für Rabatt zur auftrag_ersatzteile-Tabelle hinzufügen
+    cursor.execute("PRAGMA table_info(auftrag_ersatzteile)")
+    columns = [info[1] for info in cursor.fetchall()]
+    
+    if 'rabatt' not in columns:
+        cursor.execute("ALTER TABLE auftrag_ersatzteile ADD COLUMN rabatt REAL DEFAULT 0")
+    
+    # Schemaversion aktualisieren
+    cursor.execute("PRAGMA user_version = 5")
+    
+    conn.commit()
+    print("Datenbankschema auf Version 5 aktualisiert.")
